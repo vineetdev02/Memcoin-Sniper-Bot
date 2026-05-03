@@ -1,0 +1,187 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Mode {
+  paper
+  live
+}
+
+enum DexSource {
+  pumpfun
+  pumpswap
+  raydium_amm
+  raydium_clmm
+  raydium_launchpad
+  meteora
+  orca
+}
+
+enum Decision {
+  snipe
+  reject
+}
+
+enum PositionStatus {
+  open
+  partial
+  closed
+}
+
+enum TradeSide {
+  buy
+  sell
+}
+
+enum TradeStatus {
+  filled
+  failed
+  partial
+}
+
+enum ExitReason {
+  tp1
+  tp2
+  tp3
+  tp4
+  stop_loss
+  trailing_stop
+  time_exit
+  rug_pull
+  kill_switch
+  manual
+}
+
+// Every pool the engine has detected, regardless of decision.
+model Pool {
+  id                   String     @id @default(cuid())
+  poolAddress          String     @unique
+  tokenMint            String
+  baseMint             String
+  source               DexSource
+  initialLiquidityUsd  Float
+  initialPriceUsd      Float
+  creatorWallet        String
+  detectedAt           DateTime
+  signature            String
+  rawEvent             Json?
+
+  filterResults        FilterResult[]
+  positions            Position[]
+
+  @@index([detectedAt])
+  @@index([creatorWallet])
+  @@index([source])
+}
+
+// One row per filter run on a pool. Powers per-filter analytics.
+model FilterResult {
+  id           String   @id @default(cuid())
+  pool         Pool     @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  poolId       String
+  filterId     String
+  passed       Boolean
+  score        Float
+  reason       String
+  metadata     Json?
+  evaluatedAt  DateTime
+  durationMs   Int
+
+  @@index([poolId])
+  @@index([filterId, passed])
+}
+
+// Final orchestrator decision on a pool.
+model PoolDecision {
+  id              String   @id @default(cuid())
+  poolAddress     String   @unique
+  decision        Decision
+  totalScore      Float
+  decisionReason  String
+  decidedAt       DateTime
+
+  @@index([decidedAt])
+  @@index([decision])
+}
+
+// Open or closed position (paper or live).
+model Position {
+  id                 String         @id @default(cuid())
+  pool               Pool           @relation(fields: [poolId], references: [id])
+  poolId             String
+  tokenMint          String
+  mode               Mode
+  entryPriceUsd      Float
+  entrySizeUsd       Float
+  tokensHeld         Float
+  currentPriceUsd    Float
+  unrealizedPnlUsd   Float          @default(0)
+  realizedPnlUsd     Float          @default(0)
+  peakPriceUsd       Float
+  tpLadder           Json
+  stopLossPct        Float
+  trailingStopArmed  Boolean        @default(false)
+  status             PositionStatus @default(open)
+  openedAt           DateTime
+  closedAt           DateTime?
+  closeReason        ExitReason?
+
+  trades             Trade[]
+
+  @@index([status])
+  @@index([openedAt])
+  @@index([mode])
+}
+
+// Every buy/sell tx (paper or live).
+model Trade {
+  id              String       @id @default(cuid())
+  position        Position     @relation(fields: [positionId], references: [id], onDelete: Cascade)
+  positionId      String
+  side            TradeSide
+  status          TradeStatus
+  priceUsd        Float
+  amountTokens    Float
+  amountUsd       Float
+  feeSol          Float
+  slippagePct     Float
+  mevPenaltyPct   Float?
+  exitReason      ExitReason?
+  signature       String?
+  executedAt      DateTime
+
+  @@index([positionId])
+  @@index([executedAt])
+}
+
+// Maintained list of dev wallets known to rug. Updated by background job.
+model RuggedDevWallet {
+  walletAddress    String   @id
+  rugCount         Int      @default(0)
+  totalLaunches    Int      @default(0)
+  rugRate          Float    @default(0)
+  source           String?  // e.g. "rugcheck", "manual", "auto-detect"
+  notes            String?
+  firstSeenAt      DateTime @default(now())
+  lastUpdatedAt    DateTime @updatedAt
+
+  @@index([rugRate])
+}
+
+// Snapshots of bankroll PnL for dashboard charts.
+model BankrollSnapshot {
+  id           String   @id @default(cuid())
+  mode         Mode
+  balanceUsd   Float
+  realizedPnl  Float
+  openExposure Float
+  positionCnt  Int
+  takenAt      DateTime @default(now())
+
+  @@index([mode, takenAt])
+}

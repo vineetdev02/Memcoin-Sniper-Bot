@@ -1,0 +1,37 @@
+{
+  "name": "@sniperbot/engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:helius": "tsx src/feeds/helius-test.ts",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "@sniperbot/shared": "workspace:*",
+    "@solana/web3.js": "^1.95.4",
+    "dotenv": "^16.4.5",
+    "ioredis": "^5.4.1",
+    "p-queue": "^9.2.0",
+    "pino": "^9.5.0",
+    "pino-pretty": "^11.3.0",
+    "socket.io": "^4.8.3",
+    "ws": "^8.18.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "prisma": "^5.22.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

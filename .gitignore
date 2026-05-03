@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+.next/
+*.tsbuildinfo
+
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+secrets/
+*.keypair.json
+*-keypair.json
+wallet.json
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Prisma
+apps/engine/prisma/migrations/dev.db*
+
+# Docker volumes (handled by compose)
+docker-data/
+
+# Runtime state
+.cache/
+tmp/

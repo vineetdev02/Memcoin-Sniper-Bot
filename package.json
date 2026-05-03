@@ -1,0 +1,27 @@
+{
+  "name": "trusted-coins-tradebot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Solana memecoin sniper bot — paper trading first",
+  "scripts": {
+    "dev:engine": "pnpm --filter @sniperbot/engine dev",
+    "dev:dashboard": "pnpm --filter @sniperbot/dashboard dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "prisma:generate": "pnpm --filter @sniperbot/engine prisma:generate",
+    "prisma:migrate": "pnpm --filter @sniperbot/engine prisma:migrate"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "@types/node": "^22.10.0"
+  },
+  "packageManager": "pnpm@10.19.0"
+}
