@@ -28,6 +28,9 @@ const envSchema = z.object({
   HELIUS_WS_URL: z.string().startsWith("wss://"),
   TRITON_RPC_URL: z.string().optional().default(""),
   JITO_BLOCK_ENGINE_URL: z.string().url(),
+  PUBLIC_SOLANA_RPC: z.string().url().default("https://api.mainnet-beta.solana.com"),
+  JUPITER_QUOTE_API: z.string().url().default("https://quote-api.jup.ag/v6"),
+  RUGCHECK_API_BASE: z.string().url().default("https://api.rugcheck.xyz/v1"),
 
   // Data APIs
   BIRDEYE_API_KEY: z.string().optional().default(""),

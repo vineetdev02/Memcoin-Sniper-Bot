@@ -6,6 +6,12 @@ import { HeliusLogStream } from "./feeds/helius-ws.js";
 import { PoolDetector } from "./feeds/pool-detector.js";
 import { SyntheticFeed } from "./feeds/synthetic-feed.js";
 import { SocketServer } from "./api/socket-server.js";
+import { FilterOrchestrator } from "./filters/orchestrator.js";
+import { publishVerdict } from "./state/verdict-stream.js";
+import { PositionStore } from "./state/position-store.js";
+import { PnlTracker } from "./analytics/pnl-tracker.js";
+import { Trader } from "./execution/trader.js";
+import { ExitEngine } from "./exits/exit-engine.js";
 
 async function main() {
   logger.info(
@@ -58,10 +64,26 @@ async function main() {
   // === Pool detection pipeline ===
   const stream = new HeliusLogStream();
   const detector = new PoolDetector(stream);
+  const orchestrator = new FilterOrchestrator();
+
+  // === Phase 3: paper trading ===
+  const positionStore = new PositionStore();
+  const pnl = new PnlTracker(positionStore);
+  const trader = new Trader(positionStore, pnl);
+  const exitEngine = new ExitEngine(positionStore, env.SYNTHETIC_FEED ? 30 : 1);
 
   detector.on("pool", (event) => {
-    // Stats are logged by detector itself; hook is here for future wiring
-    void event;
+    trader.cachePool(event);
+    void orchestrator.evaluate(event);
+  });
+
+  orchestrator.on("verdict", (v) => {
+    void publishVerdict(v);
+    if (v.decision === "snipe") {
+      const pool = trader.resolvePool(v);
+      if (pool) trader.handleVerdict(v, pool);
+      else logger.warn({ poolAddress: v.poolAddress }, "snipe verdict missing pool cache");
+    }
   });
 
   await stream.start();
@@ -72,13 +94,14 @@ async function main() {
     synthetic.start();
   } else if (!env.HELIUS_API_KEY) {
     logger.warn(
-      "No HELIUS_API_KEY and SYNTHETIC_FEED=false — pool detection will produce no events. " +
-        "Set SYNTHETIC_FEED=true to test the pipeline locally, or add a Helius API key.",
+      "No HELIUS_API_KEY and SYNTHETIC_FEED=false — pool detection will produce no events.",
     );
   }
 
-  // === Socket.io broadcaster ===
-  const socketServer = new SocketServer(detector);
+  exitEngine.start();
+  pnl.start(60_000);
+
+  const socketServer = new SocketServer(detector, orchestrator, positionStore, pnl);
   await socketServer.start();
 
   logger.info(
@@ -86,22 +109,50 @@ async function main() {
       heliusActive: stream.isReady(),
       syntheticActive: !!synthetic,
       socketPort: env.ENGINE_HTTP_PORT,
+      filterCount: orchestrator.getStats().filters,
+      tpLadder: env.TP_LADDER,
+      stopLossPct: env.STOP_LOSS_PCT,
+      maxConcurrent: env.MAX_CONCURRENT_POSITIONS,
+      positionSizePct: env.POSITION_SIZE_PCT,
     },
-    "Phase 1 pipeline live",
+    "Phase 3 pipeline live (paper trading)",
   );
 
-  // === Periodic stats ===
   const statsTimer = setInterval(() => {
-    const stats = detector.getStats();
-    logger.info(stats, "detector stats");
+    const ds = detector.getStats();
+    const os = orchestrator.getStats();
+    const ps = positionStore.getStats();
+    const ts = trader.getStats();
+    const es = exitEngine.getStats();
+    const snap = pnl.buildSnapshot();
+    logger.info(
+      {
+        pools: ds.parsed,
+        snipes: os.snipes,
+        rejects: os.rejects,
+        open: ps.open,
+        closed: ps.totalClosed,
+        winRate: `${ps.winRatePct.toFixed(1)}%`,
+        balance: `$${snap.balanceUsd.toFixed(0)}`,
+        realized: `$${ps.realizedPnlUsd.toFixed(2)}`,
+        unrealized: `$${ps.unrealizedPnlUsd.toFixed(2)}`,
+        skipped: ts.skippedFull + ts.skippedRate + ts.skippedExposure,
+        failedFills: ts.failedFills,
+        partials: es.partialFills,
+        fullCloses: es.fullCloses,
+        rugs: es.rugBroadcasts,
+      },
+      "stats",
+    );
   }, 30_000);
 
-  // === Graceful shutdown ===
   await new Promise<void>((resolve) => {
     const shutdown = async (signal: string) => {
-      logger.info({ signal }, "Shutdown signal received");
+      logger.info({ signal }, "Shutdown");
       clearInterval(statsTimer);
       synthetic?.stop();
+      exitEngine.stop();
+      pnl.stop();
       await socketServer.stop();
       await stream.stop();
       await disconnectPrisma();

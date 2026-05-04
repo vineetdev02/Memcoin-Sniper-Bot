@@ -1,14 +1,24 @@
 "use client";
 
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useFeedStore } from "@/lib/store";
 import { formatUptime } from "@/lib/format";
 import { Activity, Zap, ShieldOff, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 
+const NAV = [
+  { href: "/", label: "Live" },
+  { href: "/positions", label: "Positions" },
+  { href: "/history", label: "History" },
+];
+
 export function Header() {
   const status = useFeedStore((s) => s.status);
   const connected = useFeedStore((s) => s.connected);
-  const [now, setNow] = useState(Date.now());
+  const openPositions = useFeedStore((s) => s.openPositions);
+  const pathname = usePathname();
+  const [, setNow] = useState(Date.now());
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -16,6 +26,7 @@ export function Header() {
   }, []);
 
   const isPaper = status?.mode !== "live";
+  const openCount = openPositions.size;
 
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-bg/95 backdrop-blur supports-[backdrop-filter]:bg-bg/80">
@@ -31,6 +42,31 @@ export function Header() {
                 Solana memecoin engine
               </span>
             </div>
+
+            <nav className="ml-2 flex items-center gap-0.5 rounded-md border border-border bg-bg-card p-0.5">
+              {NAV.map((n) => {
+                const active = pathname === n.href;
+                const badge = n.href === "/positions" && openCount > 0 ? openCount : null;
+                return (
+                  <Link
+                    key={n.href}
+                    href={n.href}
+                    className={`flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+                      active
+                        ? "bg-bg-elevated text-fg"
+                        : "text-fg-muted hover:text-fg"
+                    }`}
+                  >
+                    {n.label}
+                    {badge !== null && (
+                      <span className="rounded bg-accent-green/20 px-1 text-[10px] text-accent-green">
+                        {badge}
+                      </span>
+                    )}
+                  </Link>
+                );
+              })}
+            </nav>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">

@@ -1,43 +1,97 @@
-# Dependencies
-node_modules/
-.pnpm-store/
-
-# Build outputs
-dist/
-build/
-.next/
-*.tsbuildinfo
-
-# Environment & secrets
+# =====================================================
+# SECRETS — never commit these
+# =====================================================
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 secrets/
 *.keypair.json
 *-keypair.json
+*.keypair
 wallet.json
+id.json
+*.pem
+*.key
+*-key.json
+private-keys/
 
+# =====================================================
+# Dependencies
+# =====================================================
+node_modules/
+.pnpm-store/
+.yarn/
+jspm_packages/
+
+# =====================================================
+# Build outputs
+# =====================================================
+dist/
+build/
+out/
+.next/
+.turbo/
+.swc/
+*.tsbuildinfo
+.prisma/
+
+# =====================================================
 # Logs
+# =====================================================
 *.log
 logs/
 npm-debug.log*
 pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log
 
-# OS
+# =====================================================
+# Coverage / test artifacts
+# =====================================================
+coverage/
+.nyc_output/
+*.lcov
+.vitest/
+
+# =====================================================
+# Cache / runtime
+# =====================================================
+.cache/
+.parcel-cache/
+.eslintcache
+.stylelintcache
+tmp/
+temp/
 .DS_Store
 Thumbs.db
 
-# Editor
+# =====================================================
+# Editors
+# =====================================================
 .vscode/
 .idea/
 *.swp
+*.swo
+*~
+.history/
 
-# Prisma
+# =====================================================
+# Prisma local DB files (we use Postgres in Docker)
+# =====================================================
 apps/engine/prisma/migrations/dev.db*
+apps/engine/prisma/dev.db*
 
-# Docker volumes (handled by compose)
+# =====================================================
+# Docker bind mounts (volumes are managed by compose)
+# =====================================================
 docker-data/
+postgres-data/
+redis-data/
 
-# Runtime state
-.cache/
-tmp/
+# =====================================================
+# OS
+# =====================================================
+*.bak
+*.backup
+*.orig
