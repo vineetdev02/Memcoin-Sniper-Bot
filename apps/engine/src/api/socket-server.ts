@@ -1,7 +1,11 @@
 import { createServer, type Server as HttpServer } from "node:http";
 import { Server as IOServer } from "socket.io";
 import type {
+  AnalyticsSnapshot,
+  BacktestSummary,
   BankrollSnapshot,
+  FilterConfigDelta,
+  FilterPreset,
   OrchestratorVerdict,
   PoolEvent,
   Position,
@@ -17,6 +21,16 @@ import type { PoolDetector } from "../feeds/pool-detector.js";
 import type { FilterOrchestrator } from "../filters/orchestrator.js";
 import type { PositionStore } from "../state/position-store.js";
 import type { PnlTracker } from "../analytics/pnl-tracker.js";
+import { computeAnalytics } from "../analytics/filter-performance.js";
+import { runBacktest } from "../analytics/backtest.js";
+import {
+  activatePreset,
+  deactivatePresets,
+  deletePreset,
+  listPresets,
+  savePreset,
+} from "../state/filter-presets.js";
+import { filterConfig } from "../config/filter-config.js";
 
 const log = childLogger("socket-server");
 
@@ -28,6 +42,7 @@ export interface ServerToClientEvents {
   "position:update": (e: PositionUpdateEvent) => void;
   "position:closed": (e: PositionClosedEvent) => void;
   "bankroll:snapshot": (snap: BankrollSnapshot) => void;
+  "preset:changed": (preset: { activeName: string | null }) => void;
 }
 
 export interface ClientToServerEvents {
@@ -37,6 +52,27 @@ export interface ClientToServerEvents {
     ack: (data: { open: Position[]; recentlyClosed: Position[] }) => void,
   ) => void;
   "bankroll:get": (ack: (snap: BankrollSnapshot) => void) => void;
+  "analytics:get": (ack: (snap: AnalyticsSnapshot) => void) => void;
+  "presets:list": (
+    ack: (data: { presets: FilterPreset[]; activeName: string | null }) => void,
+  ) => void;
+  "preset:activate": (
+    presetId: string,
+    ack: (result: { ok: boolean; preset?: FilterPreset; error?: string }) => void,
+  ) => void;
+  "preset:deactivate": (ack: (result: { ok: boolean }) => void) => void;
+  "preset:save": (
+    payload: { name: string; description?: string; config: FilterConfigDelta },
+    ack: (result: { ok: boolean; preset?: FilterPreset; error?: string }) => void,
+  ) => void;
+  "preset:delete": (
+    presetId: string,
+    ack: (result: { ok: boolean; error?: string }) => void,
+  ) => void;
+  "backtest:run": (
+    payload: { presetName: string; config: FilterConfigDelta; limit?: number },
+    ack: (result: { ok: boolean; summary?: BacktestSummary; error?: string }) => void,
+  ) => void;
 }
 
 export interface SystemStatus {
@@ -52,6 +88,7 @@ export interface SystemStatus {
   filterQueue: number;
   openPositions: number;
   realizedPnlUsd: number;
+  activePreset: string | null;
 }
 
 export class SocketServer {
@@ -118,6 +155,75 @@ export class SocketServer {
         ack(this.pnl.buildSnapshot());
       });
 
+      socket.on("analytics:get", async (ack) => {
+        try {
+          const snap = await computeAnalytics();
+          ack(snap);
+        } catch (err) {
+          log.warn({ err }, "analytics:get failed");
+        }
+      });
+
+      socket.on("presets:list", async (ack) => {
+        try {
+          const presets = await listPresets();
+          ack({ presets, activeName: filterConfig.activeName() });
+        } catch (err) {
+          log.warn({ err }, "presets:list failed");
+        }
+      });
+
+      socket.on("preset:activate", async (presetId, ack) => {
+        try {
+          const preset = await activatePreset(presetId);
+          this.io.emit("preset:changed", { activeName: preset.name });
+          ack({ ok: true, preset });
+        } catch (err) {
+          ack({ ok: false, error: (err as Error).message });
+        }
+      });
+
+      socket.on("preset:deactivate", async (ack) => {
+        try {
+          await deactivatePresets();
+          this.io.emit("preset:changed", { activeName: null });
+          ack({ ok: true });
+        } catch {
+          ack({ ok: false });
+        }
+      });
+
+      socket.on("preset:save", async (payload, ack) => {
+        try {
+          const preset = await savePreset(payload);
+          ack({ ok: true, preset });
+        } catch (err) {
+          ack({ ok: false, error: (err as Error).message });
+        }
+      });
+
+      socket.on("preset:delete", async (id, ack) => {
+        try {
+          await deletePreset(id);
+          ack({ ok: true });
+        } catch (err) {
+          ack({ ok: false, error: (err as Error).message });
+        }
+      });
+
+      socket.on("backtest:run", async (payload, ack) => {
+        try {
+          const summary = await runBacktest(this.orchestrator, {
+            presetName: payload.presetName,
+            delta: payload.config,
+            limit: payload.limit ?? 500,
+          });
+          ack({ ok: true, summary });
+        } catch (err) {
+          ack({ ok: false, error: (err as Error).message });
+        }
+      });
+
       socket.on("disconnect", (reason) => {
         log.info({ id: socket.id, reason }, "client disconnected");
       });
@@ -150,6 +256,7 @@ export class SocketServer {
       filterQueue: orchStats.queued,
       openPositions: posStats.open,
       realizedPnlUsd: posStats.realizedPnlUsd,
+      activePreset: filterConfig.activeName(),
     };
   }
 

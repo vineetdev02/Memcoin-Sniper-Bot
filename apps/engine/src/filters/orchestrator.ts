@@ -8,16 +8,17 @@ import type {
 } from "@sniperbot/shared";
 import { childLogger } from "../utils/logger.js";
 import { getRpcConnection } from "../state/rpc.js";
-import { env } from "../config/env.js";
-import { enabledFilters } from "./registry.js";
+import { allFilters } from "./registry.js";
 import type { Filter, FilterContext, SyntheticMock } from "./types.js";
 import { makeResult } from "./types.js";
 import { getPrisma } from "../state/db.js";
+import { filterConfig } from "../config/filter-config.js";
 
 const log = childLogger("orchestrator");
 
 interface OrchestratorEvents {
   verdict: (verdict: OrchestratorVerdict) => void;
+  "verdict-backtest": (verdict: OrchestratorVerdict) => void;
 }
 
 export declare interface FilterOrchestrator {
@@ -39,27 +40,46 @@ export class FilterOrchestrator extends EventEmitter {
 
   constructor() {
     super();
-    this.filters = enabledFilters();
+    this.filters = allFilters;
     log.info(
       { count: this.filters.length, ids: this.filters.map((f) => f.id) },
       "Filter orchestrator ready",
     );
   }
 
+  private activeFilters(cfg = filterConfig.resolve()): Filter[] {
+    return this.filters.filter((f) => f.enabled && cfg.enabled(f.id));
+  }
+
   getStats() {
     return {
       snipes: this.snipes,
       rejects: this.rejects,
-      filters: this.filters.length,
+      filters: this.activeFilters().length,
       queued: this.queue.size,
+      activePreset: filterConfig.activeName(),
     };
   }
 
-  async evaluate(pool: PoolEvent): Promise<void> {
-    await this.queue.add(() => this.runFilters(pool));
+  async evaluate(
+    pool: PoolEvent,
+    opts: { persist?: boolean; configOverride?: import("../config/filter-config.js").ResolvedFilterConfig } = {},
+  ): Promise<void> {
+    const persist = opts.persist ?? true;
+    const cfg = opts.configOverride ?? filterConfig.resolve();
+    await this.queue.add(() => this.runFilters(pool, persist, cfg));
   }
 
-  private async runFilters(pool: PoolEvent): Promise<void> {
+  /** Wait for the queue to fully drain. Used by backtest replays. */
+  async drain(): Promise<void> {
+    await this.queue.onIdle();
+  }
+
+  private async runFilters(
+    pool: PoolEvent,
+    persist: boolean,
+    cfg: import("../config/filter-config.js").ResolvedFilterConfig,
+  ): Promise<void> {
     const start = Date.now();
     const conn = getRpcConnection();
     const syntheticMock = extractSyntheticMock(pool);
@@ -67,10 +87,12 @@ export class FilterOrchestrator extends EventEmitter {
       conn,
       isSynthetic: syntheticMock !== undefined,
       syntheticMock,
+      cfg,
     };
 
+    const filters = this.activeFilters(cfg);
     const results = await Promise.all(
-      this.filters.map(async (f) => {
+      filters.map(async (f) => {
         try {
           return await f.evaluate(pool, ctx);
         } catch (err) {
@@ -79,14 +101,18 @@ export class FilterOrchestrator extends EventEmitter {
       }),
     );
 
-    const verdict = this.computeVerdict(pool, results, Date.now() - start);
-    if (verdict.decision === "snipe") this.snipes++;
-    else this.rejects++;
+    const verdict = this.computeVerdict(pool, filters, results, cfg, Date.now() - start);
 
-    this.emit("verdict", verdict);
-    void this.persist(verdict, results).catch((err) =>
-      log.warn({ err, sig: pool.signature }, "verdict persist failed"),
-    );
+    if (persist) {
+      if (verdict.decision === "snipe") this.snipes++;
+      else this.rejects++;
+      this.emit("verdict", verdict);
+      void this.persist(verdict, results).catch((err) =>
+        log.warn({ err, sig: pool.signature }, "verdict persist failed"),
+      );
+    } else {
+      this.emit("verdict-backtest", verdict);
+    }
 
     log.info(
       {
@@ -104,7 +130,9 @@ export class FilterOrchestrator extends EventEmitter {
 
   private computeVerdict(
     pool: PoolEvent,
+    filters: Filter[],
     results: FilterResult[],
+    cfg: import("../config/filter-config.js").ResolvedFilterConfig,
     totalDurationMs: number,
   ): OrchestratorVerdict {
     let totalScore = 0;
@@ -113,8 +141,8 @@ export class FilterOrchestrator extends EventEmitter {
     let failed = 0;
     let firstFailReason = "";
 
-    for (let i = 0; i < this.filters.length; i++) {
-      const filter = this.filters[i];
+    for (let i = 0; i < filters.length; i++) {
+      const filter = filters[i];
       const result = results[i];
       if (!filter || !result) continue;
 
@@ -130,7 +158,7 @@ export class FilterOrchestrator extends EventEmitter {
     }
 
     const scorePct = maxScore > 0 ? Math.round((totalScore / maxScore) * 100) : 0;
-    const minScore = env.FILTER_MIN_FILTER_SCORE;
+    const minScore = cfg.minFilterScore;
 
     let decision: Decision = "snipe";
     let reason = `score ${scorePct}% ≥ min ${minScore}%`;

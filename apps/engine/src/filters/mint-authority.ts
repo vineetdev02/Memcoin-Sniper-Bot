@@ -1,7 +1,6 @@
 import { PublicKey } from "@solana/web3.js";
 import type { Filter } from "./types.js";
 import { makeResult } from "./types.js";
-import { env } from "../config/env.js";
 
 export const mintAuthorityFilter: Filter = {
   id: "mint-authority",
@@ -9,8 +8,8 @@ export const mintAuthorityFilter: Filter = {
   enabled: true,
   async evaluate(pool, ctx) {
     const start = Date.now();
-    if (!env.FILTER_MINT_AUTH_RENOUNCED) {
-      return makeResult("mint-authority", "skip", "filter disabled in env", {
+    if (!ctx.cfg.mintAuthRenounced) {
+      return makeResult("mint-authority", "skip", "filter disabled", {
         durationMs: Date.now() - start,
       });
     }

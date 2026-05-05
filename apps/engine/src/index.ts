@@ -12,6 +12,7 @@ import { PositionStore } from "./state/position-store.js";
 import { PnlTracker } from "./analytics/pnl-tracker.js";
 import { Trader } from "./execution/trader.js";
 import { ExitEngine } from "./exits/exit-engine.js";
+import { bootstrapPresets } from "./state/filter-presets.js";
 
 async function main() {
   logger.info(
@@ -60,6 +61,9 @@ async function main() {
     logger.fatal({ err }, "Postgres connection failed");
     process.exit(1);
   }
+
+  // === Phase 4: filter presets / runtime config ===
+  await bootstrapPresets();
 
   // === Pool detection pipeline ===
   const stream = new HeliusLogStream();

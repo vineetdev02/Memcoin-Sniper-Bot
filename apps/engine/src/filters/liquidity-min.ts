@@ -1,16 +1,15 @@
 import type { Filter } from "./types.js";
 import { makeResult } from "./types.js";
-import { env } from "../config/env.js";
 
 export const liquidityMinFilter: Filter = {
   id: "liquidity-min",
   weight: 5,
   enabled: true,
-  async evaluate(pool) {
+  async evaluate(pool, ctx) {
     const start = Date.now();
     const liq = pool.initialLiquidityUsd;
-    const min = env.FILTER_LIQUIDITY_MIN_USD;
-    const max = env.FILTER_LIQUIDITY_MAX_USD;
+    const min = ctx.cfg.liquidityMinUsd;
+    const max = ctx.cfg.liquidityMaxUsd;
 
     if (liq < min) {
       return makeResult(

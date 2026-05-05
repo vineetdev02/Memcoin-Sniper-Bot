@@ -1,7 +1,6 @@
 import { PublicKey } from "@solana/web3.js";
 import type { Filter } from "./types.js";
 import { makeResult } from "./types.js";
-import { env } from "../config/env.js";
 
 export const topHoldersFilter: Filter = {
   id: "top-holders",
@@ -9,8 +8,8 @@ export const topHoldersFilter: Filter = {
   enabled: true,
   async evaluate(pool, ctx) {
     const start = Date.now();
-    const max1 = env.FILTER_TOP_HOLDER_MAX_PCT;
-    const max10 = env.FILTER_TOP_10_HOLDERS_MAX_PCT;
+    const max1 = ctx.cfg.topHolderMaxPct;
+    const max10 = ctx.cfg.top10HoldersMaxPct;
 
     if (ctx.isSynthetic && ctx.syntheticMock) {
       const top1 = ctx.syntheticMock.topHolderPct;

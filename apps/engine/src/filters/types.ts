@@ -5,6 +5,7 @@ import type {
   FilterStatus,
   PoolEvent,
 } from "@sniperbot/shared";
+import type { ResolvedFilterConfig } from "../config/filter-config.js";
 
 export interface FilterContext {
   conn: Connection;
@@ -15,6 +16,11 @@ export interface FilterContext {
    * real APIs with fake mints.
    */
   syntheticMock?: SyntheticMock;
+  /**
+   * Resolved filter config for THIS evaluation. Threaded explicitly so a
+   * concurrent backtest cannot mutate live evaluations.
+   */
+  cfg: ResolvedFilterConfig;
 }
 
 export interface SyntheticMock {

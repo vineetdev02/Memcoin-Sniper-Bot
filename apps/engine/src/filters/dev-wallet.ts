@@ -31,7 +31,7 @@ export const devWalletFilter: Filter = {
   enabled: true,
   async evaluate(pool, ctx) {
     const start = Date.now();
-    const max = env.FILTER_DEV_RUG_RATE_MAX;
+    const max = ctx.cfg.devRugRateMax;
 
     if (ctx.isSynthetic && ctx.syntheticMock) {
       const rate = ctx.syntheticMock.devRugRate;

@@ -11,6 +11,9 @@ const NAV = [
   { href: "/", label: "Live" },
   { href: "/positions", label: "Positions" },
   { href: "/history", label: "History" },
+  { href: "/analytics", label: "Analytics" },
+  { href: "/filters", label: "Filters" },
+  { href: "/backtest", label: "Backtest" },
 ];
 
 export function Header() {
@@ -95,6 +98,12 @@ export function Header() {
               </span>
               {connected ? "Engine connected" : "Disconnected"}
             </div>
+
+            {status?.activePreset && (
+              <div className="hidden md:flex items-center gap-1 rounded-md border border-accent-blue/30 bg-accent-blue/5 px-2.5 py-1 text-xs text-accent-blue font-medium">
+                preset: {status.activePreset}
+              </div>
+            )}
 
             {status && (
               <div className="hidden lg:flex items-center gap-3 rounded-md border border-border bg-bg-card px-3 py-1 text-xs text-fg-muted">

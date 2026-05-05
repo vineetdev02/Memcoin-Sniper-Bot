@@ -1,13 +1,17 @@
 import type { Filter } from "./types.js";
 import { makeResult } from "./types.js";
-import { env } from "../config/env.js";
 
 export const bundledLaunchFilter: Filter = {
   id: "bundled-launch",
   weight: 8,
-  enabled: env.FILTER_BUNDLED_LAUNCH_REJECT,
+  enabled: true,
   async evaluate(pool, ctx) {
     const start = Date.now();
+    if (!ctx.cfg.bundledLaunchReject) {
+      return makeResult("bundled-launch", "skip", "filter disabled", {
+        durationMs: Date.now() - start,
+      });
+    }
     if (ctx.isSynthetic && ctx.syntheticMock) {
       const bundled = ctx.syntheticMock.bundledLaunch;
       return makeResult(

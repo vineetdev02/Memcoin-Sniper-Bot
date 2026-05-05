@@ -1,6 +1,5 @@
 import type { Filter } from "./types.js";
 import { makeResult } from "./types.js";
-import { env } from "../config/env.js";
 
 const KNOWN_LOCKERS = new Set([
   "GThUX1Atko4tqhN2NaiTazWSeFWMuiUiswQrAjfb56XV", // Streamflow lock
@@ -15,7 +14,7 @@ export const lpLockedFilter: Filter = {
   enabled: true,
   async evaluate(pool, ctx) {
     const start = Date.now();
-    if (!env.FILTER_LP_LOCKED_REQUIRED) {
+    if (!ctx.cfg.lpLockedRequired) {
       return makeResult("lp-locked", "skip", "filter disabled", {
         durationMs: Date.now() - start,
       });

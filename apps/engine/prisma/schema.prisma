@@ -123,6 +123,8 @@ model Position {
   unrealizedPnlUsd   Float          @default(0)
   realizedPnlUsd     Float          @default(0)
   peakPriceUsd       Float
+  peakGainPct        Float          @default(0)
+  filterScore        Float          @default(0)
   tpLadder           Json
   stopLossPct        Float
   trailingStopArmed  Boolean        @default(false)
@@ -136,6 +138,7 @@ model Position {
   @@index([status])
   @@index([openedAt])
   @@index([mode])
+  @@index([closeReason])
 }
 
 // Every buy/sell tx (paper or live).
@@ -171,6 +174,20 @@ model RuggedDevWallet {
   lastUpdatedAt    DateTime @updatedAt
 
   @@index([rugRate])
+}
+
+// Named filter configurations the user can switch between.
+model FilterPreset {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  config      Json     // FilterConfigDelta payload
+  isActive    Boolean  @default(false)
+  isBuiltIn   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive])
 }
 
 // Snapshots of bankroll PnL for dashboard charts.

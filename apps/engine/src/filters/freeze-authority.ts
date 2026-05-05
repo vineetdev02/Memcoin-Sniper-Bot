@@ -1,7 +1,6 @@
 import { PublicKey } from "@solana/web3.js";
 import type { Filter } from "./types.js";
 import { makeResult } from "./types.js";
-import { env } from "../config/env.js";
 
 export const freezeAuthorityFilter: Filter = {
   id: "freeze-authority",
@@ -9,7 +8,7 @@ export const freezeAuthorityFilter: Filter = {
   enabled: true,
   async evaluate(pool, ctx) {
     const start = Date.now();
-    if (!env.FILTER_FREEZE_AUTH_RENOUNCED) {
+    if (!ctx.cfg.freezeAuthRenounced) {
       return makeResult("freeze-authority", "skip", "filter disabled", {
         durationMs: Date.now() - start,
       });

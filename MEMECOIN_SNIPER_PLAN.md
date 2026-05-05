@@ -834,12 +834,14 @@ ALERT_ON_DRAWDOWN_HALT=true
 - [x] Smoke run — 90s synthetic run produced 19 snipes, 12 buys, 33 sells (TP partials), 2 trailing-stop closes, all persisted
 - [ ] **Validation**: Run paper mode for 24h. Verify PnL math by spot-checking 10 trades manually.
 
-### Phase 4 — Analytics & Tuning (Week 4)
-- [ ] Per-filter win rate analytics
-- [ ] Filter config UI on dashboard
-- [ ] Strategy presets (Safe / Aggressive / Learning)
-- [ ] Backtest mode: replay last N days with different filter configs
-- [ ] **Validation**: Identify which 3-5 filters actually predict winners. Discard noise filters.
+### Phase 4 — Analytics & Tuning (Week 4) 🟡 MOSTLY COMPLETE
+- [x] Per-filter win rate analytics — `analytics/filter-performance.ts` (per-filter passedTrades/wins/losses/lift, byDex/byLiquidity/byScoreBucket/byHour). Dashboard `/analytics` page renders summary + tables + bucket cards.
+- [x] Filter config UI on dashboard — `/filters` page with toggle-per-filter, threshold sliders, save/activate/delete presets. Live `preset:changed` socket events.
+- [x] Strategy presets (Safe / Aggressive / Learning) — built-in presets in `packages/shared/types/preset.ts`, seeded into Postgres `FilterPreset` table on engine boot.
+- [x] Backtest mode — `analytics/backtest.ts` replays last N persisted PoolEvents through orchestrator with a chosen preset. Verdicts emitted on isolated `verdict-backtest` channel; live trader unaffected. `/backtest` page triggers + renders summary.
+- [x] Runtime config plumbing — `config/filter-config.ts` resolves env+delta, threaded explicitly via `FilterContext.cfg` so concurrent backtest runs cannot mutate live evaluations.
+- [x] Schema — added `Position.filterScore`, `Position.peakGainPct`, `Position.closeReason` index, and `FilterPreset` table.
+- [ ] **Validation**: Run for 3-7 days, identify which 3-5 filters actually predict winners. Discard noise filters.
 
 ### Phase 5 — Paper Validation Period (Week 5-7)
 - [ ] Run paper mode 24/7 for 2-3 weeks with tuned filters

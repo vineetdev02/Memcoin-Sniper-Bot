@@ -11,7 +11,8 @@ export const honeypotSimFilter: Filter = {
   enabled: true,
   async evaluate(pool, ctx) {
     const start = Date.now();
-    if (!env.FILTER_HONEYPOT_SIM_REQUIRED) {
+    const cfg = ctx.cfg;
+    if (!cfg.honeypotSimRequired) {
       return makeResult("honeypot-sim", "skip", "filter disabled", {
         durationMs: Date.now() - start,
       });
@@ -20,7 +21,7 @@ export const honeypotSimFilter: Filter = {
     if (ctx.isSynthetic && ctx.syntheticMock) {
       const safe = ctx.syntheticMock.honeypotSafe;
       const tax = ctx.syntheticMock.sellTaxPct;
-      const taxFail = tax > env.FILTER_MAX_SELL_TAX_PCT;
+      const taxFail = tax > cfg.maxSellTaxPct;
       const failed = !safe || taxFail;
       return makeResult(
         "honeypot-sim",
@@ -28,7 +29,7 @@ export const honeypotSimFilter: Filter = {
         !safe
           ? "Jupiter cannot route a sell — HONEYPOT"
           : taxFail
-            ? `sell tax ${tax}% > max ${env.FILTER_MAX_SELL_TAX_PCT}%`
+            ? `sell tax ${tax}% > max ${cfg.maxSellTaxPct}%`
             : `sell route OK (tax ${tax}%)`,
         { metadata: { sellTaxPct: tax }, durationMs: Date.now() - start },
       );
@@ -83,12 +84,12 @@ export const honeypotSimFilter: Filter = {
       const priceImpact = Number(body.priceImpactPct ?? 0) * 100;
       // Use price impact as a proxy for sell tax — real tax detection needs
       // simulating the tx with a real signer. Phase 4 upgrade.
-      const taxFail = priceImpact > env.FILTER_MAX_SELL_TAX_PCT;
+      const taxFail = priceImpact > cfg.maxSellTaxPct;
       return makeResult(
         "honeypot-sim",
         taxFail ? "fail" : "pass",
         taxFail
-          ? `price impact ${priceImpact.toFixed(2)}% > max ${env.FILTER_MAX_SELL_TAX_PCT}%`
+          ? `price impact ${priceImpact.toFixed(2)}% > max ${cfg.maxSellTaxPct}%`
           : `route OK · impact ${priceImpact.toFixed(2)}%`,
         {
           metadata: { priceImpactPct: priceImpact, outAmount: body.outAmount },
