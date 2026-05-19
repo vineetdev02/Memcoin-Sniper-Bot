@@ -6,13 +6,11 @@ import { lpLockedFilter } from "./lp-locked.js";
 import { topHoldersFilter } from "./top-holders.js";
 import { honeypotSimFilter } from "./honeypot-sim.js";
 import { devWalletFilter } from "./dev-wallet.js";
-import {
-  antiSniperWarFilter,
-  bundledLaunchFilter,
-  insiderDetectionFilter,
-  socialSignalFilter,
-  volumeVelocityFilter,
-} from "./stubs.js";
+import { bundledLaunchFilter } from "./bundled-launch.js";
+import { insiderDetectionFilter } from "./insider-detection.js";
+import { antiSniperWarFilter } from "./anti-sniper-war.js";
+import { volumeVelocityFilter } from "./volume-velocity.js";
+import { socialSignalFilter } from "./social-signal.js";
 
 export const allFilters: Filter[] = [
   honeypotSimFilter,

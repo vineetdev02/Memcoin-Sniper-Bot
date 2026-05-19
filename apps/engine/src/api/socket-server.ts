@@ -21,6 +21,7 @@ import type { PoolDetector } from "../feeds/pool-detector.js";
 import type { FilterOrchestrator } from "../filters/orchestrator.js";
 import type { PositionStore } from "../state/position-store.js";
 import type { PnlTracker } from "../analytics/pnl-tracker.js";
+import type { DrawdownCircuit, HaltReason } from "../risk/drawdown-circuit.js";
 import { computeAnalytics } from "../analytics/filter-performance.js";
 import { runBacktest } from "../analytics/backtest.js";
 import {
@@ -89,6 +90,15 @@ export interface SystemStatus {
   openPositions: number;
   realizedPnlUsd: number;
   activePreset: string | null;
+  circuit: {
+    halted: boolean;
+    haltReason: HaltReason | null;
+    haltUntilTs: number | null;
+    haltDetail: string | null;
+    consecutiveLosses: number;
+    dailyLossUsd: number;
+    weeklyLossUsd: number;
+  };
 }
 
 export class SocketServer {
@@ -98,6 +108,7 @@ export class SocketServer {
   private readonly orchestrator: FilterOrchestrator;
   private readonly positionStore: PositionStore;
   private readonly pnl: PnlTracker;
+  private readonly circuit: DrawdownCircuit;
   private readonly startedAt = Date.now();
   private statusInterval: NodeJS.Timeout | null = null;
 
@@ -106,11 +117,13 @@ export class SocketServer {
     orchestrator: FilterOrchestrator,
     positionStore: PositionStore,
     pnl: PnlTracker,
+    circuit: DrawdownCircuit,
   ) {
     this.detector = detector;
     this.orchestrator = orchestrator;
     this.positionStore = positionStore;
     this.pnl = pnl;
+    this.circuit = circuit;
 
     this.http = createServer((req, res) => {
       if (req.url === "/health") {
@@ -243,6 +256,7 @@ export class SocketServer {
     const detectorStats = this.detector.getStats();
     const orchStats = this.orchestrator.getStats();
     const posStats = this.positionStore.getStats();
+    const circuitStats = this.circuit.getStats();
     return {
       mode: env.MODE,
       detectedTotal: detectorStats.parsed,
@@ -257,6 +271,15 @@ export class SocketServer {
       openPositions: posStats.open,
       realizedPnlUsd: posStats.realizedPnlUsd,
       activePreset: filterConfig.activeName(),
+      circuit: {
+        halted: circuitStats.halted,
+        haltReason: circuitStats.haltReason,
+        haltUntilTs: circuitStats.haltUntilTs,
+        haltDetail: circuitStats.haltDetail,
+        consecutiveLosses: circuitStats.consecutiveLosses,
+        dailyLossUsd: circuitStats.dailyLossUsd,
+        weeklyLossUsd: circuitStats.weeklyLossUsd,
+      },
     };
   }
 

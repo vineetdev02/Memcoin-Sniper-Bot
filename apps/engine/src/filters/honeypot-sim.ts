@@ -4,6 +4,12 @@ import { env } from "../config/env.js";
 import { SOL_MINT } from "../feeds/parsers/common.js";
 
 const SIM_AMOUNT = 1_000_000; // 1 token (assuming 6 decimals — best effort)
+/**
+ * Pools younger than this haven't been indexed by Jupiter yet. A "no route"
+ * response in this window means "not indexed", NOT "honeypot". Skip the
+ * filter rather than emit a false-positive that rejects everything.
+ */
+const FRESH_POOL_GRACE_MS = 90_000;
 
 export const honeypotSimFilter: Filter = {
   id: "honeypot-sim",
@@ -52,8 +58,19 @@ export const honeypotSimFilter: Filter = {
         clearTimeout(timeout);
       }
 
+      const ageMs = Date.now() - pool.detectedAt;
+      const isFresh = ageMs < FRESH_POOL_GRACE_MS;
+
       if (!res.ok) {
         if (res.status === 400 || res.status === 404) {
+          if (isFresh) {
+            return makeResult(
+              "honeypot-sim",
+              "skip",
+              `Jupiter not indexed yet (pool ${Math.round(ageMs / 1000)}s old)`,
+              { metadata: { httpStatus: res.status, poolAgeMs: ageMs }, durationMs: Date.now() - start },
+            );
+          }
           return makeResult(
             "honeypot-sim",
             "fail",
@@ -76,6 +93,14 @@ export const honeypotSimFilter: Filter = {
       };
 
       if (!body.outAmount || !body.routePlan || body.routePlan.length === 0) {
+        if (isFresh) {
+          return makeResult(
+            "honeypot-sim",
+            "skip",
+            `Jupiter has no route yet (pool ${Math.round(ageMs / 1000)}s old)`,
+            { metadata: { poolAgeMs: ageMs }, durationMs: Date.now() - start },
+          );
+        }
         return makeResult("honeypot-sim", "fail", "no sell route — HONEYPOT", {
           durationMs: Date.now() - start,
         });

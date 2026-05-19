@@ -56,9 +56,13 @@ export class HeliusLogStream extends EventEmitter {
       log.warn("Already started");
       return;
     }
-    if (!env.HELIUS_API_KEY) {
+    // URLs ending in `=` expect an api-key suffix (Helius style). URLs without
+    // it are self-authenticating (QuickNode-style — auth is in the path).
+    const needsApiKey =
+      env.HELIUS_RPC_URL.endsWith("=") || env.HELIUS_WS_URL.endsWith("=");
+    if (needsApiKey && !env.HELIUS_API_KEY) {
       log.warn(
-        "HELIUS_API_KEY is empty — Helius log stream not starting. Use SYNTHETIC_FEED=true for pipeline testing.",
+        "RPC URL expects an api key but HELIUS_API_KEY is empty — log stream not starting. Use SYNTHETIC_FEED=true for pipeline testing.",
       );
       return;
     }

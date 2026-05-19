@@ -573,13 +573,22 @@ Advanced mode: Kelly-modified
 - Low score (<70) = 0.5% (or skip)
 ```
 
-### Drawdown Circuit Breaker
+### Drawdown Circuit Breaker ✅ IMPLEMENTED
 
 ```
 Daily loss > 10% of bankroll → HALT all new entries for 24h
 Weekly loss > 25% → HALT for 72h, force review of filters
 Single day with > 20 consecutive losses → HALT for 24h
 ```
+
+Wired in `risk/drawdown-circuit.ts`. Subscribes to `PositionStore` "position-closed" events,
+tracks rolling 24h + 7d realized losses against current bankroll, plus a consecutive-loss
+counter that resets on any win. `Trader.handleVerdict` calls `circuit.canTrade()` before
+opening a position; blocked snipes increment `skippedHalted`. Halt state surfaced in
+`SystemStatus.circuit` (halted, haltReason, haltUntilTs, haltDetail, consecutiveLosses,
+dailyLossUsd, weeklyLossUsd) so the dashboard can display it. Exits are never gated — even
+during a halt, stop-losses / TPs / rug-pulls fire normally. Verified by deterministic test
+in `risk/circuit-smoke.ts` (consecutive-losses halt, win-resets-streak, daily-drawdown halt).
 
 ### Concurrent Position Limits
 
@@ -815,20 +824,20 @@ ALERT_ON_DRAWDOWN_HALT=true
 - [x] Dashboard skeleton showing live pool feed (no filters yet)
 - [x] **Validation**: Should see 100s of new pools per hour streaming live (synthetic feed in place; live Helius validation pending real API key run)
 
-### Phase 2 — Filter Engine (Day 8-14) 🟡 MOSTLY COMPLETE
-- [x] Implement filters 1-12 (each as separate, testable module) — 1-7 + 9 fully implemented; 8, 10-12 stubbed (work in synthetic mode, deferred for real-mode wiring to Phase 4)
+### Phase 2 — Filter Engine (Day 8-14) ✅ CODE COMPLETE
+- [x] Implement filters 1-12 (each as separate, testable module) — all 12 now have real-mode logic, not stubs. Filter 7 (`bundled-launch.ts`) + 8 (`insider-detection.ts`) + 10 (`social-signal.ts`) + 11 (`volume-velocity.ts`) + 12 (`anti-sniper-war.ts`) replaced. Shared `feeds/dexscreener-client.ts` (15s cache, in-flight dedup) backs the social + velocity + rug paths.
 - [x] Honeypot simulator using Jupiter quote API
 - [x] Dev wallet history tracker (Bitquery + local cache) — uses RugCheck + local `RuggedDevWallet` table + in-proc cache
 - [x] Filter orchestrator (parallel execution)
 - [x] Filter results stored in Postgres for every pool seen
 - [x] Dashboard shows filter results per pool
-- [ ] **Validation**: Verify each filter's logic against 20 known good and 20 known rug tokens manually
+- [ ] **Validation (operator-run)**: Verify each filter's logic against 20 known good and 20 known rug tokens manually — requires real Helius key + curated mint fixtures, not code work.
 
 ### Phase 3 — Paper Trading Simulator (Day 15-21) 🟡 MOSTLY COMPLETE
 - [x] Paper executor with realistic slippage/fee/MEV simulation — `execution/paper-executor.ts` (depth-based slippage, 10% fail, 30% MEV penalty, Jito tip)
 - [x] Position store (in-memory hot + Postgres history) — `state/position-store.ts` (Redis-hot deferred; in-memory is sufficient for single-process engine)
 - [x] TP ladder + SL + trailing stop + time exit logic — `exits/exit-engine.ts` (1s tick, priority-ordered exits)
-- [x] Rug pull auto-exit — synthetic mode covered by `price-simulator.ts` rug events; real-mode pool-account subscription deferred to Phase 4
+- [x] Rug pull auto-exit — synthetic mode covered by `price-simulator.ts` rug events; real-mode now covered by `exits/rug-watcher.ts` (5s DexScreener liquidity poll per open position, drops position from watch after 5 consecutive missing readings, fires `ExitEngine.forceClose(id, "rug-pull")` on > `RUG_DETECTION_LP_DROP_PCT` drop from baseline). Self-disables under `SYNTHETIC_FEED=true` so the price-simulator owns rugs there.
 - [x] PnL tracker (per trade, daily, all-time) — `analytics/pnl-tracker.ts` (per-minute snapshots into `BankrollSnapshot`)
 - [x] Dashboard positions + history pages — `/positions`, `/history`, `BankrollBar`, `PositionsTable`, `HistoryTable`, nav in Header
 - [x] Smoke run — 90s synthetic run produced 19 snipes, 12 buys, 33 sells (TP partials), 2 trailing-stop closes, all persisted

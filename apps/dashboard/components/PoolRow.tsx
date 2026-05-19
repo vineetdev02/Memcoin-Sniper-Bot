@@ -45,14 +45,16 @@ function PoolRowImpl({ pool, verdict, isNew }: PoolRowProps) {
 
   return (
     <div
-      className={`group rounded-lg border border-border bg-bg-card transition-colors hover:border-border-strong ${decisionRing} ${
+      className={`group rounded-lg border border-border bg-bg-card transition-colors hover:border-border-strong hover:bg-bg-card/60 ${decisionRing} ${
         isNew ? "animate-slide-in" : ""
       }`}
     >
       <button
         type="button"
         onClick={() => toggleExpanded(pool.signature)}
-        className="w-full text-left"
+        className="w-full cursor-pointer text-left hover:bg-bg-elevated/30 active:bg-bg-elevated/60"
+        aria-expanded={expanded}
+        aria-label={`Toggle details for pool ${pool.tokenMint}`}
       >
         <div className="grid grid-cols-12 gap-2 sm:gap-3 p-3">
           {/* Source + age */}

@@ -6,23 +6,27 @@ import { buildTPLadder, PositionStore } from "../state/position-store.js";
 import { paperExecutor, buyResultToTrade } from "./paper-executor.js";
 import { buildProfile } from "./price-simulator.js";
 import type { PnlTracker } from "../analytics/pnl-tracker.js";
+import type { DrawdownCircuit } from "../risk/drawdown-circuit.js";
 
 const log = childLogger("trader");
 
 export class Trader {
   private readonly store: PositionStore;
   private readonly pnl: PnlTracker;
+  private readonly circuit: DrawdownCircuit;
   private readonly recentEntries: number[] = [];
   private skippedFull = 0;
   private skippedRate = 0;
   private skippedExposure = 0;
+  private skippedHalted = 0;
   private failedFills = 0;
 
   private readonly recentPools = new Map<string, { pool: PoolEvent; cachedAt: number }>();
 
-  constructor(store: PositionStore, pnl: PnlTracker) {
+  constructor(store: PositionStore, pnl: PnlTracker, circuit: DrawdownCircuit) {
     this.store = store;
     this.pnl = pnl;
+    this.circuit = circuit;
   }
 
   cachePool(pool: PoolEvent): void {
@@ -49,6 +53,7 @@ export class Trader {
       skippedFull: this.skippedFull,
       skippedRate: this.skippedRate,
       skippedExposure: this.skippedExposure,
+      skippedHalted: this.skippedHalted,
       failedFills: this.failedFills,
     };
   }
@@ -56,6 +61,13 @@ export class Trader {
   /** Handle a snipe verdict — open a paper position if checks pass. */
   handleVerdict(verdict: OrchestratorVerdict, pool: PoolEvent): void {
     if (verdict.decision !== "snipe") return;
+
+    const gate = this.circuit.canTrade();
+    if (!gate.allowed) {
+      this.skippedHalted++;
+      log.warn({ reason: gate.reason, mint: pool.tokenMint.slice(0, 8) }, "circuit blocked snipe");
+      return;
+    }
 
     if (this.store.count() >= env.MAX_CONCURRENT_POSITIONS) {
       this.skippedFull++;

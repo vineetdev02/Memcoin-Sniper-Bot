@@ -66,8 +66,15 @@ export interface PositionClosedEvent {
 
 export interface BankrollSnapshot {
   balanceUsd: number;
+  startingBalanceUsd: number;
   realizedPnlUsd: number;
   unrealizedPnlUsd: number;
+  /** Sum of entry sizes for every position ever opened (closed + open). */
+  totalInvestedUsd: number;
+  /** Gross USD profits from winning closed trades. */
+  totalGrossWinUsd: number;
+  /** Gross USD losses (positive number) from losing closed trades. */
+  totalGrossLossUsd: number;
   openExposureUsd: number;
   openPositionCount: number;
   totalTrades: number;

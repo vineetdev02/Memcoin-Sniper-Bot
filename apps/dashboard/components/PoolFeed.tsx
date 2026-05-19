@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useFeedStore } from "@/lib/store";
 import { PoolRow } from "./PoolRow";
-import { Radio } from "lucide-react";
+import { Radio, MousePointerClick } from "lucide-react";
 import { useEffect } from "react";
 
 type FilterMode = "all" | "snipe" | "reject" | "pending";
@@ -68,6 +68,35 @@ export function PoolFeed() {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Legend — what the filter boxes mean */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-border-subtle bg-bg-card/40 px-3 py-1.5 text-[10px] text-fg-subtle">
+        <div className="flex items-center gap-1.5">
+          <MousePointerClick className="h-3 w-3" />
+          <span>Click any row to see why</span>
+        </div>
+        <span className="text-border-strong">·</span>
+        <div className="flex items-center gap-1.5">
+          <span className="inline-flex h-3.5 w-3.5 items-center justify-center rounded border border-accent-green/30 bg-accent-green/15 font-mono text-[8px] font-bold text-accent-green">
+            ✓
+          </span>
+          <span>filter passed</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="inline-flex h-3.5 w-3.5 items-center justify-center rounded border border-accent-red/30 bg-accent-red/15 font-mono text-[8px] font-bold text-accent-red">
+            ✕
+          </span>
+          <span>failed</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="inline-flex h-3.5 w-3.5 items-center justify-center rounded border border-border-subtle bg-bg-elevated font-mono text-[8px] font-bold text-fg-dim">
+            —
+          </span>
+          <span>skipped</span>
+        </div>
+        <span className="text-border-strong">·</span>
+        <span className="opacity-80">12 boxes per row = 1 per filter (hover for details)</span>
       </div>
 
       <div className="flex flex-col gap-2">

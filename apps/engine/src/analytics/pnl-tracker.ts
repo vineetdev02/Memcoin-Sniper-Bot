@@ -17,11 +17,15 @@ export class PnlTracker {
   private totalGrossWinUsd = 0;
   private totalGrossLossUsd = 0;
   private totalTrades = 0;
+  private totalInvestedUsd = 0;
 
   constructor(store: PositionStore) {
     this.store = store;
     this.startingBalance = env.PAPER_STARTING_BALANCE_USD;
 
+    store.on("position-opened", ({ position }) => {
+      this.totalInvestedUsd += position.entrySizeUsd;
+    });
     store.on("position-closed", ({ position }) => this.onClose(position));
   }
 
@@ -56,8 +60,12 @@ export class PnlTracker {
     const totalClosed = this.wins + this.losses;
     return {
       balanceUsd,
+      startingBalanceUsd: this.startingBalance,
       realizedPnlUsd: stats.realizedPnlUsd,
       unrealizedPnlUsd: stats.unrealizedPnlUsd,
+      totalInvestedUsd: this.totalInvestedUsd,
+      totalGrossWinUsd: this.totalGrossWinUsd,
+      totalGrossLossUsd: this.totalGrossLossUsd,
       openExposureUsd: stats.openExposureUsd,
       openPositionCount: stats.open,
       totalTrades: totalClosed,

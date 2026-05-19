@@ -12,6 +12,8 @@ import { PositionStore } from "./state/position-store.js";
 import { PnlTracker } from "./analytics/pnl-tracker.js";
 import { Trader } from "./execution/trader.js";
 import { ExitEngine } from "./exits/exit-engine.js";
+import { RugWatcher } from "./exits/rug-watcher.js";
+import { DrawdownCircuit } from "./risk/drawdown-circuit.js";
 import { bootstrapPresets } from "./state/filter-presets.js";
 
 async function main() {
@@ -73,8 +75,10 @@ async function main() {
   // === Phase 3: paper trading ===
   const positionStore = new PositionStore();
   const pnl = new PnlTracker(positionStore);
-  const trader = new Trader(positionStore, pnl);
+  const circuit = new DrawdownCircuit(positionStore, pnl);
+  const trader = new Trader(positionStore, pnl, circuit);
   const exitEngine = new ExitEngine(positionStore, env.SYNTHETIC_FEED ? 30 : 1);
+  const rugWatcher = new RugWatcher(positionStore, exitEngine);
 
   detector.on("pool", (event) => {
     trader.cachePool(event);
@@ -96,16 +100,21 @@ async function main() {
   if (env.SYNTHETIC_FEED) {
     synthetic = new SyntheticFeed(detector, env.SYNTHETIC_FEED_MIN_MS, env.SYNTHETIC_FEED_MAX_MS);
     synthetic.start();
-  } else if (!env.HELIUS_API_KEY) {
-    logger.warn(
-      "No HELIUS_API_KEY and SYNTHETIC_FEED=false — pool detection will produce no events.",
-    );
+  } else {
+    const urlNeedsKey = env.HELIUS_RPC_URL.endsWith("=");
+    if (urlNeedsKey && !env.HELIUS_API_KEY) {
+      logger.warn(
+        "RPC URL needs an api-key suffix but HELIUS_API_KEY is empty — pool detection will produce no events.",
+      );
+    }
   }
 
+  circuit.start();
   exitEngine.start();
+  rugWatcher.start();
   pnl.start(60_000);
 
-  const socketServer = new SocketServer(detector, orchestrator, positionStore, pnl);
+  const socketServer = new SocketServer(detector, orchestrator, positionStore, pnl, circuit);
   await socketServer.start();
 
   logger.info(
@@ -128,6 +137,8 @@ async function main() {
     const ps = positionStore.getStats();
     const ts = trader.getStats();
     const es = exitEngine.getStats();
+    const rs = rugWatcher.getStats();
+    const cs = circuit.getStats();
     const snap = pnl.buildSnapshot();
     logger.info(
       {
@@ -145,6 +156,13 @@ async function main() {
         partials: es.partialFills,
         fullCloses: es.fullCloses,
         rugs: es.rugBroadcasts,
+        rugWatch: rs.tracked,
+        rugDetected: rs.detections,
+        halted: cs.halted,
+        haltReason: cs.haltReason,
+        dailyLossUsd: cs.dailyLossUsd.toFixed(2),
+        consLosses: cs.consecutiveLosses,
+        skippedHalted: trader.getStats().skippedHalted,
       },
       "stats",
     );
@@ -155,7 +173,9 @@ async function main() {
       logger.info({ signal }, "Shutdown");
       clearInterval(statsTimer);
       synthetic?.stop();
+      rugWatcher.stop();
       exitEngine.stop();
+      circuit.stop();
       pnl.stop();
       await socketServer.stop();
       await stream.stop();

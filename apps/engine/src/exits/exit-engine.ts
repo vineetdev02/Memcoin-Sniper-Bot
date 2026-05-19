@@ -147,6 +147,27 @@ export class ExitEngine {
     return { kind: "none" };
   }
 
+  /** Force-close a single position at current price with a given reason. */
+  forceClose(positionId: string, reason: ExitReason): void {
+    const rec = this.store.get(positionId);
+    if (!rec) return;
+    const p = rec.position;
+    const simElapsed = (Date.now() - p.openedAt) * this.timeScale;
+    const liq = liquidityAt(rec.profile, simElapsed);
+    const sell = paperExecutor.sell(
+      p.entryPriceUsd,
+      p.currentPriceUsd,
+      p.remainingTokens,
+      liq,
+      reason,
+    );
+    const trade = sellResultToTrade(p.id, sell);
+    this.fullCloses++;
+    if (reason === "rug-pull") this.rugBroadcasts++;
+    this.store.closeFully(p.id, sell.proceedsUsd, trade, reason);
+    log.warn({ id: p.id.slice(0, 8), reason }, "forced close");
+  }
+
   /** Force-close every open position (kill switch). */
   killAll(): void {
     for (const p of this.store.list()) {
