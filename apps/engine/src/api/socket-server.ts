@@ -302,10 +302,15 @@ export class SocketServer {
       clearInterval(this.statusInterval);
       this.statusInterval = null;
     }
+    // io.close() also closes the http server it is attached to. Closing it a
+    // second time rejects with ERR_SERVER_NOT_RUNNING, which crashed shutdown
+    // before Postgres and Redis were disconnected.
     await this.io.close();
-    await new Promise<void>((resolve, reject) =>
-      this.http.close((err) => (err ? reject(err) : resolve())),
-    );
+    if (this.http.listening) {
+      await new Promise<void>((resolve, reject) =>
+        this.http.close((err) => (err ? reject(err) : resolve())),
+      );
+    }
     log.info("stopped");
   }
 }

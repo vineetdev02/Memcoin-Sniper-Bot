@@ -36,6 +36,7 @@ export class HeliusLogStream extends EventEmitter {
   private readonly targets: ProgramTarget[];
   private started = false;
   private dedupeWindow = new Map<string, number>();
+  private dedupeTimer: NodeJS.Timeout | null = null;
   private readonly DEDUPE_TTL_MS = 60_000;
 
   constructor() {
@@ -112,7 +113,7 @@ export class HeliusLogStream extends EventEmitter {
     }
 
     this.started = true;
-    setInterval(() => this.cleanupDedupe(), this.DEDUPE_TTL_MS);
+    this.dedupeTimer = setInterval(() => this.cleanupDedupe(), this.DEDUPE_TTL_MS);
     this.emit("ready");
     log.info({ subscriptions: this.subscriptionIds.length }, "Helius log stream live");
   }
@@ -157,6 +158,9 @@ export class HeliusLogStream extends EventEmitter {
       }
     }
     this.subscriptionIds = [];
+    // An interval left running keeps the process alive after "Goodbye.".
+    if (this.dedupeTimer) clearInterval(this.dedupeTimer);
+    this.dedupeTimer = null;
     this.started = false;
     log.info("Stopped");
   }

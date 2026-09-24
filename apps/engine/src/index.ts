@@ -171,6 +171,10 @@ async function main() {
   await new Promise<void>((resolve) => {
     const shutdown = async (signal: string) => {
       logger.info({ signal }, "Shutdown");
+      setTimeout(() => {
+        logger.error("shutdown did not finish in 15s; forcing exit");
+        exit(1);
+      }, 15_000).unref();
       clearInterval(statsTimer);
       synthetic?.stop();
       rugWatcher.stop();
@@ -190,7 +194,18 @@ async function main() {
   logger.info("Goodbye.");
 }
 
-main().catch((err) => {
-  logger.fatal({ err }, "Engine crashed during boot");
-  process.exit(1);
-});
+/** Exit once the logger has written everything — in dev it logs from a worker thread. */
+function exit(code: number): void {
+  setTimeout(() => process.exit(code), 1000).unref();
+  logger.flush(() => process.exit(code));
+}
+
+main().then(
+  // Exit explicitly: the Solana websocket client keeps reconnecting after its
+  // listeners are removed and would hold a stopped engine open indefinitely.
+  () => exit(0),
+  (err) => {
+    logger.fatal({ err }, "Engine crashed during boot");
+    exit(1);
+  },
+);
