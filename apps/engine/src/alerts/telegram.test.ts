@@ -2,7 +2,10 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { TelegramClient } from "./telegram.js";
 
-const TOKEN = "123456789:AAFakeTokenFakeTokenFakeTokenFake00";
+// Deliberately NOT shaped like a real bot token (digits:35 chars). A realistic
+// fake trips GitHub secret scanning on a public repo, and the client never
+// validates the format, so the redaction test works the same with any string.
+const TOKEN = "fake-bot-token-for-tests";
 
 interface Call {
   url: string;
