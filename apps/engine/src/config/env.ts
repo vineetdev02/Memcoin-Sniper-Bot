@@ -106,6 +106,8 @@ const envSchema = z.object({
   ALERT_ON_EXIT: boolFromString.default(true),
   ALERT_ON_DAILY_PNL: boolFromString.default(true),
   ALERT_ON_DRAWDOWN_HALT: boolFromString.default(true),
+  ALERT_ON_ENGINE_STATUS: boolFromString.default(true),
+  ALERT_DAILY_PNL_HOUR_UTC: z.coerce.number().int().min(0).max(23).default(0),
 
   // Runtime
   LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),

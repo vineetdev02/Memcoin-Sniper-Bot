@@ -8,6 +8,8 @@
     "dev:dashboard": "pnpm --filter @sniperbot/dashboard dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r --if-present test",
+    "alerts:test": "pnpm --filter @sniperbot/engine alerts:test",
     "lint": "pnpm -r lint",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",

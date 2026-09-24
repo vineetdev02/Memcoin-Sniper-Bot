@@ -15,6 +15,7 @@ import { ExitEngine } from "./exits/exit-engine.js";
 import { RugWatcher } from "./exits/rug-watcher.js";
 import { DrawdownCircuit } from "./risk/drawdown-circuit.js";
 import { bootstrapPresets } from "./state/filter-presets.js";
+import { createAlerter } from "./alerts/index.js";
 
 async function main() {
   logger.info(
@@ -79,6 +80,7 @@ async function main() {
   const trader = new Trader(positionStore, pnl, circuit);
   const exitEngine = new ExitEngine(positionStore, env.SYNTHETIC_FEED ? 30 : 1);
   const rugWatcher = new RugWatcher(positionStore, exitEngine);
+  const alerter = createAlerter({ store: positionStore, circuit, pnl });
 
   detector.on("pool", (event) => {
     trader.cachePool(event);
@@ -109,6 +111,8 @@ async function main() {
     }
   }
 
+  // Before circuit.start(): the alerter must hear a close before the halt it triggers.
+  alerter?.start();
   circuit.start();
   exitEngine.start();
   rugWatcher.start();
@@ -140,6 +144,7 @@ async function main() {
     const rs = rugWatcher.getStats();
     const cs = circuit.getStats();
     const snap = pnl.buildSnapshot();
+    const as = alerter?.getStats();
     logger.info(
       {
         pools: ds.parsed,
@@ -163,6 +168,7 @@ async function main() {
         dailyLossUsd: cs.dailyLossUsd.toFixed(2),
         consLosses: cs.consecutiveLosses,
         skippedHalted: trader.getStats().skippedHalted,
+        alerts: as ? (as.disabled ? "disabled" : `${as.sent} sent, ${as.failed} failed, ${as.dropped} dropped`) : undefined,
       },
       "stats",
     );
@@ -176,6 +182,7 @@ async function main() {
         exit(1);
       }, 15_000).unref();
       clearInterval(statsTimer);
+      await alerter?.stop(signal);
       synthetic?.stop();
       rugWatcher.stop();
       exitEngine.stop();
