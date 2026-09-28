@@ -11,6 +11,18 @@ export const liquidityMinFilter: Filter = {
     const min = ctx.cfg.liquidityMinUsd;
     const max = ctx.cfg.liquidityMaxUsd;
 
+    // The pump.fun parser prices every launch off the same 30 virtual SOL, so
+    // this figure is identical for all of them — comparing it to a threshold
+    // failed every pump.fun token without measuring anything.
+    if (pool.source === "pumpfun" && !ctx.isSynthetic) {
+      return makeResult(
+        "liquidity-min",
+        "skip",
+        `bonding curve: $${liq.toFixed(0)} is the same virtual depth for every pump.fun launch, not measured liquidity`,
+        { metadata: { liquidityUsd: liq, min, max, virtual: true }, durationMs: Date.now() - start },
+      );
+    }
+
     if (liq < min) {
       return makeResult(
         "liquidity-min",
