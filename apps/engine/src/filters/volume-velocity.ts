@@ -34,7 +34,7 @@ export const volumeVelocityFilter: Filter = {
       );
     }
 
-    const pair = await fetchPair(pool.poolAddress);
+    const pair = await fetchPair(pool.tokenMint);
     if (!pair) {
       return makeResult("volume-velocity", "skip", "DexScreener has no pair data yet", {
         durationMs: Date.now() - start,

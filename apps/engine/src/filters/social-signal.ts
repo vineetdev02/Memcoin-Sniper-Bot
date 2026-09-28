@@ -50,7 +50,7 @@ export const socialSignalFilter: Filter = {
       );
     }
 
-    const pair = await fetchPair(pool.poolAddress);
+    const pair = await fetchPair(pool.tokenMint);
     if (!pair) {
       // No DexScreener entry yet — treat as low-confidence pass so the filter
       // doesn't gate everything just for being fresh
