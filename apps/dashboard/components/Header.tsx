@@ -4,7 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useFeedStore } from "@/lib/store";
 import { formatUptime } from "@/lib/format";
-import { Activity, Zap, ShieldOff, ShieldCheck } from "lucide-react";
+import { getSocket } from "@/lib/socket";
+import { Activity, Zap, ShieldOff, ShieldCheck, Play, Square } from "lucide-react";
 import { useEffect, useState } from "react";
 
 const NAV = [
@@ -74,6 +75,20 @@ export function Header() {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
+            <BotToggle
+              on={status?.botOn ?? false}
+              feedLive={status?.feedLive ?? false}
+              available={connected && status !== null}
+              isPaper={isPaper}
+            />
+            {status && (
+              <div
+                className="hidden md:flex items-center rounded-md border border-border bg-bg-card px-2.5 py-1 text-xs text-fg-muted tabular-nums"
+                title={`${status.rpcRequests} RPC requests (≈ Helius credits) and ${status.logNotifications} log notifications since the engine started`}
+              >
+                RPC <span className="ml-1 text-fg">{status.rpcRequests}</span>
+              </div>
+            )}
             <ModeBadge isPaper={isPaper} />
 
             <div
@@ -126,6 +141,64 @@ export function Header() {
         )}
       </div>
     </header>
+  );
+}
+
+/**
+ * The whole bot: the engine boots off, with no RPC subscription, so nothing is
+ * detected, filtered or traded — and no credit is spent — until this is pressed.
+ * Off again stops all of that; open positions keep their exits.
+ */
+function BotToggle({
+  on,
+  feedLive,
+  available,
+  isPaper,
+}: {
+  on: boolean;
+  feedLive: boolean;
+  available: boolean;
+  isPaper: boolean;
+}) {
+  const [pending, setPending] = useState(false);
+
+  const toggle = () => {
+    const next = !on;
+    if (next && !isPaper && !window.confirm("Start the bot in LIVE mode? It will spend real SOL.")) return;
+    setPending(true);
+    getSocket()
+      .timeout(10_000)
+      .emit("bot:set", next, (err, res) => {
+        setPending(false);
+        if (err) window.alert("Engine did not answer — the bot is unchanged.");
+        else if (!res.ok) window.alert(`Could not switch the bot: ${res.error ?? "unknown error"}`);
+      });
+  };
+
+  const label = !on ? "Bot OFF" : feedLive ? "Bot ON" : "Bot ON · no feed";
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      disabled={!available || pending}
+      title={
+        !available
+          ? "Engine not connected"
+          : on
+            ? "Stop: unsubscribe from the RPC provider and open no new positions (open ones keep their exits)"
+            : "Start: subscribe to new pools (spends RPC credits), filter them and paper-trade the snipes"
+      }
+      className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-semibold tracking-wide transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+        !on
+          ? "border-border bg-bg-card text-fg-muted hover:text-fg"
+          : feedLive
+            ? "border-accent-green/40 bg-accent-green/10 text-accent-green hover:bg-accent-green/20"
+            : "border-accent-amber/40 bg-accent-amber/10 text-accent-amber"
+      }`}
+    >
+      {on ? <Square className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+      {pending ? "…" : label}
+    </button>
   );
 }
 

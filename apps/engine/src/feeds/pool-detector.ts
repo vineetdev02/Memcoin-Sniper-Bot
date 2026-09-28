@@ -59,6 +59,11 @@ export class PoolDetector extends EventEmitter {
     };
   }
 
+  /** Drop logs still waiting to be parsed — each parse is an RPC call. */
+  clearPending(): void {
+    this.queue.clear();
+  }
+
   private handleRawLog(raw: RawLogEvent): void {
     const conn = this.stream.getConnection();
     if (!conn) return;

@@ -1,6 +1,7 @@
 import { Connection } from "@solana/web3.js";
 import { env } from "../config/env.js";
 import { childLogger } from "../utils/logger.js";
+import { meteredFetch } from "../utils/rpc-meter.js";
 
 const log = childLogger("rpc");
 
@@ -36,6 +37,7 @@ export function getRpcConnection(): Connection {
   connection = new Connection(rpcUrl, {
     commitment: "confirmed",
     confirmTransactionInitialTimeout: 30_000,
+    fetch: meteredFetch,
   });
   return connection;
 }

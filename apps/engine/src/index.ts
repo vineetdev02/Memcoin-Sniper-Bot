@@ -11,6 +11,8 @@ import { publishVerdict } from "./state/verdict-stream.js";
 import { PositionStore } from "./state/position-store.js";
 import { PnlTracker } from "./analytics/pnl-tracker.js";
 import { Trader } from "./execution/trader.js";
+import { BotSwitch } from "./execution/bot-switch.js";
+import { rpcUsage } from "./utils/rpc-meter.js";
 import { ExitEngine } from "./exits/exit-engine.js";
 import { RugWatcher } from "./exits/rug-watcher.js";
 import { DrawdownCircuit } from "./risk/drawdown-circuit.js";
@@ -96,12 +98,10 @@ async function main() {
     }
   });
 
-  await stream.start();
-
+  // Built here, started only by the switch below.
   let synthetic: SyntheticFeed | null = null;
   if (env.SYNTHETIC_FEED) {
     synthetic = new SyntheticFeed(detector, env.SYNTHETIC_FEED_MIN_MS, env.SYNTHETIC_FEED_MAX_MS);
-    synthetic.start();
   } else {
     const urlNeedsKey = env.HELIUS_RPC_URL.endsWith("=");
     if (urlNeedsKey && !env.HELIUS_API_KEY) {
@@ -118,13 +118,31 @@ async function main() {
   rugWatcher.start();
   pnl.start(60_000);
 
-  const socketServer = new SocketServer(detector, orchestrator, positionStore, pnl, circuit);
+  // Nothing subscribes to the RPC provider until the dashboard turns this on.
+  const bot = new BotSwitch({
+    feed: {
+      start: async () => {
+        await stream.start();
+        synthetic?.start();
+      },
+      stop: async () => {
+        synthetic?.stop();
+        await stream.stop();
+      },
+      isLive: () => stream.isReady() || (synthetic?.isRunning() ?? false),
+    },
+    detector,
+    orchestrator,
+    trader,
+  });
+
+  const socketServer = new SocketServer(detector, orchestrator, positionStore, pnl, circuit, bot);
   await socketServer.start();
 
   logger.info(
     {
-      heliusActive: stream.isReady(),
-      syntheticActive: !!synthetic,
+      botOn: bot.isOn(),
+      syntheticConfigured: !!synthetic,
       socketPort: env.ENGINE_HTTP_PORT,
       filterCount: orchestrator.getStats().filters,
       tpLadder: env.TP_LADDER,
@@ -133,6 +151,9 @@ async function main() {
       positionSizePct: env.POSITION_SIZE_PCT,
     },
     "Phase 3 pipeline live (paper trading)",
+  );
+  logger.warn(
+    "Bot is OFF — not connected to the RPC provider (no credits spent), no pools, no trades. Press Bot OFF → ON on the dashboard.",
   );
 
   const statsTimer = setInterval(() => {
@@ -167,7 +188,9 @@ async function main() {
         haltReason: cs.haltReason,
         dailyLossUsd: cs.dailyLossUsd.toFixed(2),
         consLosses: cs.consecutiveLosses,
-        skippedHalted: trader.getStats().skippedHalted,
+        skippedHalted: ts.skippedHalted,
+        bot: bot.isOn() ? "on" : "off",
+        rpcRequests: rpcUsage().rpcRequests,
         alerts: as ? (as.disabled ? "disabled" : `${as.sent} sent, ${as.failed} failed, ${as.dropped} dropped`) : undefined,
       },
       "stats",

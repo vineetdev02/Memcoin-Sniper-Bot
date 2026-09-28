@@ -3,6 +3,8 @@ import { EventEmitter } from "node:events";
 import { env } from "../config/env.js";
 import { childLogger } from "../utils/logger.js";
 import { getEnabledTargets, type ProgramTarget } from "./program-ids.js";
+import { getParser } from "./parsers/index.js";
+import { countLogNotification, meteredFetch } from "../utils/rpc-meter.js";
 import type { DexSource } from "@sniperbot/shared";
 
 const log = childLogger("helius-ws");
@@ -41,7 +43,13 @@ export class HeliusLogStream extends EventEmitter {
 
   constructor() {
     super();
-    this.targets = getEnabledTargets();
+    // A source with no parser can never produce a pool, so subscribing to it
+    // would pay for its whole log firehose only to throw every line away.
+    const enabled = getEnabledTargets();
+    this.targets = enabled.filter((t) => getParser(t.source));
+    for (const t of enabled) {
+      if (!getParser(t.source)) log.warn({ source: t.source }, "enabled, but has no parser yet — not subscribing");
+    }
   }
 
   isReady(): boolean {
@@ -82,6 +90,7 @@ export class HeliusLogStream extends EventEmitter {
     this.connection = new Connection(rpcUrl, {
       wsEndpoint: wsUrl,
       commitment: "processed",
+      fetch: meteredFetch,
     });
 
     log.info(
@@ -119,6 +128,7 @@ export class HeliusLogStream extends EventEmitter {
   }
 
   private handleLog(target: ProgramTarget, logs: Logs, ctx: Context): void {
+    countLogNotification();
     if (logs.err) return;
     if (this.dedupeWindow.has(logs.signature)) return;
 

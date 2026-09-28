@@ -115,6 +115,14 @@ pnpm dev:engine       # the bot itself
 pnpm dev:dashboard    # http://localhost:3000
 ```
 
+**The bot starts off.** Until you press **Bot OFF → ON** in the dashboard header, the engine does
+not even connect to the RPC provider: no pools are detected, filtered or traded, and no Helius
+credits are spent. Every restart turns it off again. Pressing it off unsubscribes and stops new
+entries; open positions keep their take-profits, stop-losses and rug watch, none of which use RPC.
+The **RPC** counter next to the button is every request the engine has sent since it started —
+roughly the credits spent. The Backtest page is the one other thing that spends them: each replayed
+pool runs the preset's filters against the RPC, even while the bot is off.
+
 | Page | What it shows |
 | --- | --- |
 | **Live** | new pools as they are detected, with a pass/fail pill per filter |

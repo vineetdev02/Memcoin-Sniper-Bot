@@ -52,7 +52,8 @@ export function BacktestView() {
         <h1 className="text-lg font-semibold">Backtest</h1>
         <p className="text-xs text-fg-subtle">
           Replays the most recent N persisted pool events through a chosen preset and counts snipes/rejects.
-          Live trading is unaffected.
+          Live trading is unaffected — but every replayed pool runs the preset&apos;s filters against your RPC,
+          so a run spends credits even while the bot is off.
         </p>
       </div>
 

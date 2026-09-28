@@ -166,6 +166,7 @@ function generateEvent(): PoolEvent {
 
 export class SyntheticFeed {
   private timer: NodeJS.Timeout | null = null;
+  private running = false;
   private readonly detector: PoolDetector;
   private readonly minDelayMs: number;
   private readonly maxDelayMs: number;
@@ -177,6 +178,8 @@ export class SyntheticFeed {
   }
 
   start(): void {
+    if (this.running) return;
+    this.running = true;
     log.warn(
       { minDelayMs: this.minDelayMs, maxDelayMs: this.maxDelayMs },
       "SYNTHETIC FEED ACTIVE — generating fake pool events for pipeline testing",
@@ -185,11 +188,18 @@ export class SyntheticFeed {
   }
 
   stop(): void {
+    // scheduleNext checks it too: a stop during an in-flight ingest must not reschedule
+    this.running = false;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
   }
 
+  isRunning(): boolean {
+    return this.running;
+  }
+
   private scheduleNext(): void {
+    if (!this.running) return;
     const delay = this.minDelayMs + Math.random() * (this.maxDelayMs - this.minDelayMs);
     this.timer = setTimeout(async () => {
       try {

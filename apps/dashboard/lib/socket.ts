@@ -31,6 +31,10 @@ export interface SystemStatus {
   openPositions: number;
   realizedPnlUsd: number;
   activePreset: string | null;
+  botOn: boolean;
+  feedLive: boolean;
+  rpcRequests: number;
+  logNotifications: number;
 }
 
 export interface ServerToClientEvents {
@@ -79,6 +83,7 @@ export interface ClientToServerEvents {
     payload: { presetName: string; config: FilterConfigDelta; limit?: number },
     ack: (result: { ok: boolean; summary?: BacktestSummary; error?: string }) => void,
   ) => void;
+  "bot:set": (on: boolean, ack: (result: { ok: boolean; botOn: boolean; error?: string }) => void) => void;
 }
 
 export type SniperSocket = Socket<ServerToClientEvents, ClientToServerEvents>;

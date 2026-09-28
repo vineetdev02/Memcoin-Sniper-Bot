@@ -37,6 +37,9 @@ export class FilterOrchestrator extends EventEmitter {
   private readonly filters: Filter[];
   private snipes = 0;
   private rejects = 0;
+  // Off until the bot switch turns it on: a live evaluation spends RPC calls.
+  // Backtests (persist: false) are started by hand and are not gated.
+  private live = false;
 
   constructor() {
     super();
@@ -61,11 +64,16 @@ export class FilterOrchestrator extends EventEmitter {
     };
   }
 
+  setLive(on: boolean): void {
+    this.live = on;
+  }
+
   async evaluate(
     pool: PoolEvent,
     opts: { persist?: boolean; configOverride?: import("../config/filter-config.js").ResolvedFilterConfig } = {},
   ): Promise<void> {
     const persist = opts.persist ?? true;
+    if (persist && !this.live) return;
     const cfg = opts.configOverride ?? filterConfig.resolve();
     await this.queue.add(() => this.runFilters(pool, persist, cfg));
   }
@@ -80,6 +88,8 @@ export class FilterOrchestrator extends EventEmitter {
     persist: boolean,
     cfg: import("../config/filter-config.js").ResolvedFilterConfig,
   ): Promise<void> {
+    // queued before the bot was switched off
+    if (persist && !this.live) return;
     const start = Date.now();
     const conn = getRpcConnection();
     const syntheticMock = extractSyntheticMock(pool);

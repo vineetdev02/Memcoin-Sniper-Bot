@@ -19,7 +19,10 @@ export class Trader {
   private skippedRate = 0;
   private skippedExposure = 0;
   private skippedHalted = 0;
+  private skippedDisabled = 0;
   private failedFills = 0;
+  // Off at every start: nothing opens until someone presses Start on the dashboard.
+  private enabled = false;
 
   private readonly recentPools = new Map<string, { pool: PoolEvent; cachedAt: number }>();
 
@@ -54,13 +57,33 @@ export class Trader {
       skippedRate: this.skippedRate,
       skippedExposure: this.skippedExposure,
       skippedHalted: this.skippedHalted,
+      skippedDisabled: this.skippedDisabled,
       failedFills: this.failedFills,
     };
+  }
+
+  isEnabled(): boolean {
+    return this.enabled;
+  }
+
+  /**
+   * Gates new entries only. Open positions keep their exits either way —
+   * stopping must never strand a position without its stop-loss.
+   */
+  setEnabled(on: boolean): void {
+    if (on === this.enabled) return;
+    this.enabled = on;
+    log.warn({ mode: env.MODE }, on ? "trading STARTED from dashboard" : "trading STOPPED from dashboard");
   }
 
   /** Handle a snipe verdict — open a paper position if checks pass. */
   handleVerdict(verdict: OrchestratorVerdict, pool: PoolEvent): void {
     if (verdict.decision !== "snipe") return;
+
+    if (!this.enabled) {
+      this.skippedDisabled++;
+      return;
+    }
 
     const gate = this.circuit.canTrade();
     if (!gate.allowed) {

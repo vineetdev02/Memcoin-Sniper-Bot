@@ -24,6 +24,8 @@ import type { FilterOrchestrator } from "../filters/orchestrator.js";
 import type { PositionStore } from "../state/position-store.js";
 import type { PnlTracker } from "../analytics/pnl-tracker.js";
 import type { DrawdownCircuit, HaltReason } from "../risk/drawdown-circuit.js";
+import type { BotSwitch } from "../execution/bot-switch.js";
+import { rpcUsage } from "../utils/rpc-meter.js";
 import { computeAnalytics } from "../analytics/filter-performance.js";
 import { computeStatsWindow } from "../analytics/stats-window.js";
 import { runBacktest } from "../analytics/backtest.js";
@@ -81,6 +83,7 @@ export interface ClientToServerEvents {
     payload: { presetName: string; config: FilterConfigDelta; limit?: number },
     ack: (result: { ok: boolean; summary?: BacktestSummary; error?: string }) => void,
   ) => void;
+  "bot:set": (on: boolean, ack: (result: { ok: boolean; botOn: boolean; error?: string }) => void) => void;
 }
 
 export interface SystemStatus {
@@ -97,6 +100,13 @@ export interface SystemStatus {
   openPositions: number;
   realizedPnlUsd: number;
   activePreset: string | null;
+  // false at every boot: no RPC subscription, no pools, no new positions
+  botOn: boolean;
+  // on, and something is actually delivering pools
+  feedLive: boolean;
+  // since the engine started — rpcRequests is roughly the credits spent
+  rpcRequests: number;
+  logNotifications: number;
   circuit: {
     halted: boolean;
     haltReason: HaltReason | null;
@@ -116,6 +126,7 @@ export class SocketServer {
   private readonly positionStore: PositionStore;
   private readonly pnl: PnlTracker;
   private readonly circuit: DrawdownCircuit;
+  private readonly bot: BotSwitch;
   private readonly startedAt = Date.now();
   private statusInterval: NodeJS.Timeout | null = null;
 
@@ -125,12 +136,14 @@ export class SocketServer {
     positionStore: PositionStore,
     pnl: PnlTracker,
     circuit: DrawdownCircuit,
+    bot: BotSwitch,
   ) {
     this.detector = detector;
     this.orchestrator = orchestrator;
     this.positionStore = positionStore;
     this.pnl = pnl;
     this.circuit = circuit;
+    this.bot = bot;
 
     this.http = createServer((req, res) => {
       if (req.url === "/health") {
@@ -254,6 +267,23 @@ export class SocketServer {
         }
       });
 
+      socket.on("bot:set", async (on, ack) => {
+        const reply = typeof ack === "function" ? ack : () => undefined;
+        if (typeof on !== "boolean") {
+          reply({ ok: false, botOn: this.bot.isOn(), error: "expected true or false" });
+          return;
+        }
+        try {
+          await this.bot.set(on);
+          reply({ ok: true, botOn: this.bot.isOn() });
+        } catch (err) {
+          log.error({ err }, "bot switch failed");
+          reply({ ok: false, botOn: this.bot.isOn(), error: (err as Error).message });
+        }
+        // every open dashboard flips at once, not on the next 2s tick
+        this.io.emit("system:status", this.buildStatus());
+      });
+
       socket.on("disconnect", (reason) => {
         log.info({ id: socket.id, reason }, "client disconnected");
       });
@@ -288,6 +318,9 @@ export class SocketServer {
       openPositions: posStats.open,
       realizedPnlUsd: posStats.realizedPnlUsd,
       activePreset: filterConfig.activeName(),
+      botOn: this.bot.isOn(),
+      feedLive: this.bot.feedLive(),
+      ...rpcUsage(),
       circuit: {
         halted: circuitStats.halted,
         haltReason: circuitStats.haltReason,
