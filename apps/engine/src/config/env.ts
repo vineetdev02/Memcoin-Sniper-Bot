@@ -29,6 +29,7 @@ const envSchema = z.object({
   TRITON_RPC_URL: z.string().optional().default(""),
   JITO_BLOCK_ENGINE_URL: z.string().url(),
   PUBLIC_SOLANA_RPC: z.string().url().default("https://api.mainnet-beta.solana.com"),
+  RPC_MAX_RPS: z.coerce.number().int().positive().default(8),
   // quote-api.jup.ag/v6 no longer answers; lite-api is the keyless successor
   JUPITER_QUOTE_API: z.string().url().default("https://lite-api.jup.ag/swap/v1"),
   RUGCHECK_API_BASE: z.string().url().default("https://api.rugcheck.xyz/v1"),

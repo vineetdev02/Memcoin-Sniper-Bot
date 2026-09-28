@@ -12,7 +12,7 @@ import { PositionStore } from "./state/position-store.js";
 import { PnlTracker } from "./analytics/pnl-tracker.js";
 import { Trader } from "./execution/trader.js";
 import { BotSwitch } from "./execution/bot-switch.js";
-import { rpcUsage } from "./utils/rpc-meter.js";
+import { limitRpcRate, rpcUsage } from "./utils/rpc-meter.js";
 import { ExitEngine } from "./exits/exit-engine.js";
 import { RugWatcher } from "./exits/rug-watcher.js";
 import { DrawdownCircuit } from "./risk/drawdown-circuit.js";
@@ -50,6 +50,9 @@ async function main() {
       "LIVE MODE — real funds at risk",
     );
   }
+
+  // Before any connection exists: every RPC request from here on is paced.
+  limitRpcRate(env.RPC_MAX_RPS);
 
   // === Infra checks ===
   const redisOk = await pingRedis();
