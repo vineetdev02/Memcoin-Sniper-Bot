@@ -143,6 +143,9 @@ export class PositionStore extends EventEmitter {
     const costBasis = (tokensSold / p.initialTokens) * p.entrySizeUsd;
     p.remainingTokens = Math.max(0, p.remainingTokens - tokensSold);
     p.realizedPnlUsd += proceedsUsd - costBasis;
+    // A take-profit is money back in the bankroll now, not when the rest sells.
+    this.totalRealizedPnlUsd += proceedsUsd - costBasis;
+    this.totalProceedsUsd += proceedsUsd;
     p.status = p.remainingTokens <= 1e-9 ? "closed" : "partial";
     const tp = p.tpLadder[tpIndex];
     if (tp) {
@@ -170,7 +173,8 @@ export class PositionStore extends EventEmitter {
     rec.trades.push(sellTrade);
     const tokensRemaining = p.remainingTokens;
     const costBasis = (tokensRemaining / p.initialTokens) * p.entrySizeUsd;
-    p.realizedPnlUsd += proceedsUsd - costBasis;
+    const lastSalePnl = proceedsUsd - costBasis;
+    p.realizedPnlUsd += lastSalePnl;
     p.remainingTokens = 0;
     p.status = "closed";
     p.closedAt = Date.now();
@@ -178,8 +182,9 @@ export class PositionStore extends EventEmitter {
     p.unrealizedPnlUsd = 0;
     p.unrealizedPnlPct = 0;
 
-    this.totalRealizedPnlUsd += p.realizedPnlUsd;
-    this.totalProceedsUsd += p.entrySizeUsd + p.realizedPnlUsd;
+    // take-profits were added as they happened; only this last sale is new
+    this.totalRealizedPnlUsd += lastSalePnl;
+    this.totalProceedsUsd += proceedsUsd;
     if (p.realizedPnlUsd > 0) this.wins++;
     else this.losses++;
 
