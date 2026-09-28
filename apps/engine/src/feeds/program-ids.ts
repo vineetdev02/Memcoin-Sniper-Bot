@@ -56,7 +56,9 @@ export const PROGRAM_TARGETS: ProgramTarget[] = [
     source: "raydium-amm",
     programId: RAYDIUM_AMM_V4_PROGRAM_ID,
     description: "Raydium AMM v4 standard pools",
-    creationMarkers: ["Program log: initialize2", "Program log: ray_log"],
+    // Not "ray_log": every Raydium swap emits one, which made each swap on an
+    // existing pool look like a new pool.
+    creationMarkers: ["Program log: initialize2"],
   },
   {
     source: "raydium-clmm",
