@@ -13,6 +13,7 @@ import { PnlTracker } from "./analytics/pnl-tracker.js";
 import { Trader } from "./execution/trader.js";
 import { BotSwitch } from "./execution/bot-switch.js";
 import { MarketFeed } from "./execution/market-price.js";
+import { isSyntheticPool } from "./execution/price-simulator.js";
 import { restorePositions } from "./state/position-restore.js";
 import { limitRpcRate, rpcUsage } from "./utils/rpc-meter.js";
 import { ExitEngine } from "./exits/exit-engine.js";
@@ -104,9 +105,18 @@ async function main() {
     logger.error({ err }, "could not restore positions from the last run — starting without them");
   }
 
+  // Filters run EVAL_DELAY_SEC after a pool appears. At launch the honeypot
+  // quote, the volume and the socials do not exist yet, so several filters
+  // could only answer "unknown" and no strict preset could ever pass.
+  // Synthetic pools carry their answers and are judged at once.
   detector.on("pool", (event) => {
-    trader.cachePool(event);
-    void orchestrator.evaluate(event);
+    const judge = () => {
+      trader.cachePool(event);
+      void orchestrator.evaluate(event);
+    };
+    const delayMs = isSyntheticPool(event) ? 0 : env.EVAL_DELAY_SEC * 1000;
+    if (delayMs === 0) judge();
+    else setTimeout(judge, delayMs).unref();
   });
 
   orchestrator.on("verdict", (v) => {

@@ -31,6 +31,8 @@ buy** and **when you sell**:
  pump.fun · PumpSwap · Raydium ───▶ │ Pool detector               │  normalise every DEX to one PoolEvent
                                     └──────────────┬──────────────┘
                                                    ▼
+                                                   │ waits EVAL_DELAY_SEC (90s)
+                                                   ▼
                                     ┌─────────────────────────────┐
                                     │ Filter orchestrator         │  12 filters in parallel, weighted score
                                     │  any hard fail  → reject    │
@@ -81,6 +83,9 @@ analytics page can show which filters actually predict winners.
   Only synthetic-feed pools use the price simulator.
 - **Rug watcher**: reads each open position's liquidity from the same feed and force-sells when it
   drops sharply (`RUG_DETECTION_LP_DROP_PCT`).
+- **Evaluation delay**: a new pool is judged `EVAL_DELAY_SEC` (default 90) after it appears. At
+  launch the honeypot quote, trading volume and socials do not exist yet, so several filters
+  could only answer "unknown".
 - **Restarts**: positions left open by the last run are restored and keep their exits, and the
   bankroll carries over everything already closed.
 - **Position limits**: 1% of bankroll per trade, at most 10 open positions, a 30% total exposure

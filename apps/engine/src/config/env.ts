@@ -34,6 +34,8 @@ const envSchema = z.object({
   JUPITER_QUOTE_API: z.string().url().default("https://lite-api.jup.ag/swap/v1"),
   // prices for paper trades: entries, exits and the rug watch
   JUPITER_PRICE_API: z.string().url().default("https://lite-api.jup.ag/price/v3"),
+  // seconds between a pool appearing and its filters running; 0 = at once
+  EVAL_DELAY_SEC: z.coerce.number().int().min(0).default(90),
   RUGCHECK_API_BASE: z.string().url().default("https://api.rugcheck.xyz/v1"),
 
   // Data APIs
