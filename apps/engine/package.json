@@ -12,6 +12,7 @@
     "test": "tsx --test \"src/**/*.test.ts\"",
     "test:helius": "tsx src/feeds/helius-test.ts",
     "alerts:test": "tsx src/alerts/send-test.ts",
+    "fixtures:label": "tsx src/labeling/label-fixtures.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio"

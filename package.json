@@ -10,6 +10,7 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r --if-present test",
     "alerts:test": "pnpm --filter @sniperbot/engine alerts:test",
+    "fixtures:label": "pnpm --filter @sniperbot/engine fixtures:label",
     "lint": "pnpm -r lint",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",

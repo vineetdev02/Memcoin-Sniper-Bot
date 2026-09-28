@@ -205,6 +205,7 @@ than run on a typo.
 | `pnpm typecheck` | `tsc --noEmit` across all packages |
 | `pnpm test` | unit tests (Node's built-in runner, no extra dependencies) |
 | `pnpm alerts:test` | check the Telegram setup and send a test message |
+| `pnpm fixtures:label` | label stored pools rug / good / honeypot by what happened on chain, into `apps/engine/fixtures/` |
 | `pnpm docker:up` / `docker:down` / `docker:logs` | local Redis and Postgres |
 | `pnpm prisma:migrate` | apply database migrations |
 
@@ -221,6 +222,7 @@ apps/
       risk/               drawdown circuit breaker
       analytics/          P&L tracker, per-filter performance, backtest
       alerts/             Telegram alerts: formatting, delivery queue, daily report
+      labeling/           outcome-based fixture labels from on-chain history
       api/                Socket.IO server for the dashboard
       state/              Postgres (Prisma), Redis streams, position store, presets
     prisma/               schema and migrations
