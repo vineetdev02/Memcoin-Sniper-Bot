@@ -25,3 +25,15 @@ describe("liquidity-min", () => {
     assert.equal((await liquidityMinFilter.evaluate(pool("pumpfun", 5400), ctx(true))).status, "fail");
   });
 });
+
+describe("lp-locked on a bonding curve", () => {
+  test("pump.fun has no LP to pull, so it passes instead of skipping", async () => {
+    const { lpLockedFilter } = await import("./lp-locked.js");
+    const r = await lpLockedFilter.evaluate(
+      { source: "pumpfun" } as PoolEvent,
+      { isSynthetic: false, cfg: { lpLockedRequired: true } } as FilterContext,
+    );
+    assert.equal(r.status, "pass");
+    assert.match(r.reason, /no LP exists/);
+  });
+});

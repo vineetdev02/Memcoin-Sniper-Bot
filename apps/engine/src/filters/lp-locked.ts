@@ -35,10 +35,21 @@ export const lpLockedFilter: Filter = {
       );
     }
 
-    // Real-mode lookup is non-trivial — pump.fun curves don't have LP at all,
-    // and Raydium needs decoding the AMM account to find the LP mint then the
-    // largest LP holder. For Phase 2 we mark this as skip in real mode and add
-    // proper IDL-aware decoding in Phase 4.
+    // A pump.fun bonding curve has no LP token to pull: the SOL sits in the
+    // curve and only the pump.fun program can move it (on buys, sells and
+    // migration). The risk this filter guards against cannot happen there.
+    if (pool.source === "pumpfun") {
+      return makeResult(
+        "lp-locked",
+        "pass",
+        "bonding curve — no LP exists; liquidity is held by the pump.fun program",
+        { metadata: { status: "bonding-curve" }, durationMs: Date.now() - start },
+      );
+    }
+
+    // Real-mode lookup is non-trivial — Raydium needs decoding the AMM account
+    // to find the LP mint then the largest LP holder. For Phase 2 we mark this
+    // as skip in real mode and add proper IDL-aware decoding in Phase 4.
     return makeResult(
       "lp-locked",
       "skip",
