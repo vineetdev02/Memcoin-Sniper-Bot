@@ -87,25 +87,25 @@ export function estimateSolDeposited(tx: ParsedTransactionWithMeta): number {
 }
 
 /**
- * Detect quote/base pair from postTokenBalances. The quote mint is one of the
- * KNOWN_QUOTE_MINTS; the base mint is the new token.
+ * Detect the traded token and its quote mint from a pool-creation tx. The
+ * quote is one of the KNOWN_QUOTE_MINTS. Creating an AMM pool also creates
+ * its LP mint, so two unknown mints appear: the token already existed (it is
+ * in preTokenBalances, being deposited), the LP mint did not. Taking whichever
+ * came last stored the LP mint as the token for PumpSwap and Raydium pools.
  */
 export function detectPairFromBalances(
   tx: ParsedTransactionWithMeta,
 ): { baseMint: string; quoteMint: string } | null {
-  const balances = tx.meta?.postTokenBalances ?? [];
-  const mints = new Set(balances.map((b) => b.mint));
-  let quoteMint: string | null = null;
-  let baseMint: string | null = null;
-  for (const m of mints) {
-    if (KNOWN_QUOTE_MINTS.has(m)) {
-      quoteMint = m;
-    } else {
-      baseMint = m;
-    }
-  }
-  if (!baseMint) return null;
-  return { baseMint, quoteMint: quoteMint ?? SOL_MINT };
+  const post = tx.meta?.postTokenBalances ?? [];
+  const pre = new Set((tx.meta?.preTokenBalances ?? []).map((b) => b.mint));
+  const mints = new Set(post.map((b) => b.mint));
+  const quoteMint = [...mints].find((m) => KNOWN_QUOTE_MINTS.has(m)) ?? SOL_MINT;
+  const candidates = [...mints].filter((m) => !KNOWN_QUOTE_MINTS.has(m));
+  const existing = candidates.filter((m) => pre.has(m));
+  if (existing.length === 1 && existing[0]) return { baseMint: existing[0], quoteMint };
+  if (candidates.length === 1 && candidates[0]) return { baseMint: candidates[0], quoteMint };
+  // several candidates and no single pre-existing one: refuse rather than guess
+  return null;
 }
 
 export type AnyParsedTx = ParsedTransactionWithMeta | VersionedTransactionResponse;
