@@ -12,6 +12,8 @@ import type {
   PositionClosedEvent,
   PositionOpenedEvent,
   PositionUpdateEvent,
+  StatsWindowKey,
+  TradeStatsWindow,
 } from "@sniperbot/shared";
 import { env } from "../config/env.js";
 import { childLogger } from "../utils/logger.js";
@@ -23,6 +25,7 @@ import type { PositionStore } from "../state/position-store.js";
 import type { PnlTracker } from "../analytics/pnl-tracker.js";
 import type { DrawdownCircuit, HaltReason } from "../risk/drawdown-circuit.js";
 import { computeAnalytics } from "../analytics/filter-performance.js";
+import { computeStatsWindow } from "../analytics/stats-window.js";
 import { runBacktest } from "../analytics/backtest.js";
 import {
   activatePreset,
@@ -54,6 +57,10 @@ export interface ClientToServerEvents {
   ) => void;
   "bankroll:get": (ack: (snap: BankrollSnapshot) => void) => void;
   "analytics:get": (ack: (snap: AnalyticsSnapshot) => void) => void;
+  "stats:get": (
+    windowKey: StatsWindowKey,
+    ack: (result: { ok: boolean; stats?: TradeStatsWindow; error?: string }) => void,
+  ) => void;
   "presets:list": (
     ack: (data: { presets: FilterPreset[]; activeName: string | null }) => void,
   ) => void;
@@ -174,6 +181,16 @@ export class SocketServer {
           ack(snap);
         } catch (err) {
           log.warn({ err }, "analytics:get failed");
+        }
+      });
+
+      socket.on("stats:get", async (windowKey, ack) => {
+        try {
+          const stats = await computeStatsWindow(windowKey);
+          ack({ ok: true, stats });
+        } catch (err) {
+          log.warn({ err, windowKey }, "stats:get failed");
+          ack({ ok: false, error: (err as Error).message });
         }
       });
 

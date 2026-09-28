@@ -13,6 +13,8 @@ import type {
   PositionClosedEvent,
   PositionOpenedEvent,
   PositionUpdateEvent,
+  StatsWindowKey,
+  TradeStatsWindow,
 } from "@sniperbot/shared";
 
 export interface SystemStatus {
@@ -53,6 +55,10 @@ export interface ClientToServerEvents {
   ) => void;
   "bankroll:get": (ack: (snap: BankrollSnapshot) => void) => void;
   "analytics:get": (ack: (snap: AnalyticsSnapshot) => void) => void;
+  "stats:get": (
+    windowKey: StatsWindowKey,
+    ack: (result: { ok: boolean; stats?: TradeStatsWindow; error?: string }) => void,
+  ) => void;
   "presets:list": (
     ack: (data: { presets: FilterPreset[]; activeName: string | null }) => void,
   ) => void;
