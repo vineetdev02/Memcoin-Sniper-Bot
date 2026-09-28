@@ -4,7 +4,8 @@ import { env } from "../config/env.js";
 import { childLogger } from "../utils/logger.js";
 import { buildTPLadder, PositionStore } from "../state/position-store.js";
 import { paperExecutor, buyResultToTrade } from "./paper-executor.js";
-import { buildProfile } from "./price-simulator.js";
+import { buildProfile, isSyntheticPool } from "./price-simulator.js";
+import type { MarketFeed } from "./market-price.js";
 import type { PnlTracker } from "../analytics/pnl-tracker.js";
 import type { DrawdownCircuit } from "../risk/drawdown-circuit.js";
 
@@ -14,22 +15,27 @@ export class Trader {
   private readonly store: PositionStore;
   private readonly pnl: PnlTracker;
   private readonly circuit: DrawdownCircuit;
+  private readonly feed: MarketFeed | null;
   private readonly recentEntries: number[] = [];
+  // entries past every check, waiting for their market price
+  private pendingEntries = 0;
   private skippedFull = 0;
   private skippedRate = 0;
   private skippedExposure = 0;
   private skippedHalted = 0;
   private skippedDisabled = 0;
+  private skippedNoPrice = 0;
   private failedFills = 0;
   // Off at every start: nothing opens until someone presses Start on the dashboard.
   private enabled = false;
 
   private readonly recentPools = new Map<string, { pool: PoolEvent; cachedAt: number }>();
 
-  constructor(store: PositionStore, pnl: PnlTracker, circuit: DrawdownCircuit) {
+  constructor(store: PositionStore, pnl: PnlTracker, circuit: DrawdownCircuit, feed: MarketFeed | null = null) {
     this.store = store;
     this.pnl = pnl;
     this.circuit = circuit;
+    this.feed = feed;
   }
 
   cachePool(pool: PoolEvent): void {
@@ -58,6 +64,7 @@ export class Trader {
       skippedExposure: this.skippedExposure,
       skippedHalted: this.skippedHalted,
       skippedDisabled: this.skippedDisabled,
+      skippedNoPrice: this.skippedNoPrice,
       failedFills: this.failedFills,
     };
   }
@@ -76,8 +83,12 @@ export class Trader {
     log.warn({ mode: env.MODE }, on ? "trading STARTED from dashboard" : "trading STOPPED from dashboard");
   }
 
-  /** Handle a snipe verdict — open a paper position if checks pass. */
-  handleVerdict(verdict: OrchestratorVerdict, pool: PoolEvent): void {
+  /**
+   * Handle a snipe verdict — open a paper position if checks pass. A real pool
+   * is bought at its market price at this moment; a pool nobody quotes is not
+   * bought at all, since nothing could be known about the fill.
+   */
+  async handleVerdict(verdict: OrchestratorVerdict, pool: PoolEvent): Promise<void> {
     if (verdict.decision !== "snipe") return;
 
     if (!this.enabled) {
@@ -92,7 +103,7 @@ export class Trader {
       return;
     }
 
-    if (this.store.count() >= env.MAX_CONCURRENT_POSITIONS) {
+    if (this.store.count() + this.pendingEntries >= env.MAX_CONCURRENT_POSITIONS) {
       this.skippedFull++;
       return;
     }
@@ -117,16 +128,46 @@ export class Trader {
     }
 
     const sizeUsd = snap.balanceUsd * (env.POSITION_SIZE_PCT / 100);
-    const result = paperExecutor.buy(verdict, pool, sizeUsd);
 
+    // Hold the slot while the price is fetched, so concurrent snipes cannot
+    // all slip through the checks above; give it back if nothing opens.
+    this.recentEntries.push(now);
+    this.pendingEntries++;
+    let opened = false;
+    try {
+      opened = await this.open(verdict, pool, sizeUsd);
+    } catch (err) {
+      log.error({ err, mint: pool.tokenMint.slice(0, 8) }, "entry failed");
+    } finally {
+      this.pendingEntries--;
+      if (!opened) {
+        const i = this.recentEntries.lastIndexOf(now);
+        if (i >= 0) this.recentEntries.splice(i, 1);
+      }
+    }
+  }
+
+  private async open(verdict: OrchestratorVerdict, pool: PoolEvent, sizeUsd: number): Promise<boolean> {
+    const synthetic = isSyntheticPool(pool);
+    const market = synthetic ? undefined : await this.feed?.quote(pool.tokenMint);
+    if (!synthetic && !market) {
+      this.skippedNoPrice++;
+      log.warn({ mint: pool.tokenMint.slice(0, 8) }, "no market price — not trading it");
+      return false;
+    }
+    if (!this.enabled) {
+      // switched off while the price was being fetched
+      this.skippedDisabled++;
+      return false;
+    }
+
+    const result = paperExecutor.buy(verdict, pool, sizeUsd, market);
     if (result.status === "failed") {
       this.failedFills++;
       // Failed fills cost the fee — record as a tiny realized loss via a "ghost" closed position?
       // Simpler: just log for now; PnL only counts filled positions.
-      return;
+      return false;
     }
-
-    this.recentEntries.push(now);
 
     const tokenSymbol = (pool.rawEvent as { name?: string } | undefined)?.name;
     const positionId = randomUUID();
@@ -158,9 +199,11 @@ export class Trader {
       status: "open",
     };
 
-    const profile = buildProfile(pool, result.fillTime, result.effectivePriceUsd);
+    // only a synthetic pool's price is simulated; a real one is priced by the feed
+    const profile = synthetic ? buildProfile(pool, result.fillTime, result.effectivePriceUsd) : undefined;
     const buyTrade = buyResultToTrade(positionId, result);
 
     this.store.add(position, profile, buyTrade);
+    return true;
   }
 }

@@ -3,11 +3,22 @@ import { childLogger } from "../utils/logger.js";
 import { env } from "../config/env.js";
 import { paperExecutor, sellResultToTrade } from "../execution/paper-executor.js";
 import { liquidityAt, priceAt } from "../execution/price-simulator.js";
-import { PositionStore } from "../state/position-store.js";
+import type { MarketFeed } from "../execution/market-price.js";
+import type { PositionRecord, PositionStore } from "../state/position-store.js";
 
 const log = childLogger("exit-engine");
 
 const TP_REASONS: ExitReason[] = ["tp1", "tp2", "tp3", "tp4"];
+
+// How long a token past its time window may go unpriced before it is written
+// off. Long enough that a restart's first empty ticks never trigger it.
+const UNPRICED_WRITE_OFF_MS = 3 * 60_000;
+
+interface MarketNow {
+  priceUsd: number;
+  liquidityUsd: number;
+  rugAt: number | null;
+}
 
 interface ExitDecision {
   kind: "partial-tp" | "full-close" | "none";
@@ -25,13 +36,30 @@ export class ExitEngine {
    */
   private readonly timeScale: number;
   private readonly tickMs = 1000;
+  private readonly market: MarketFeed | null;
+  private readonly unpricedSince = new Map<string, number>();
   private rugBroadcasts = 0;
   private partialFills = 0;
   private fullCloses = 0;
 
-  constructor(store: PositionStore, timeScale = 30) {
+  constructor(store: PositionStore, timeScale = 30, market: MarketFeed | null = null) {
     this.store = store;
     this.timeScale = Math.max(1, timeScale);
+    this.market = market;
+  }
+
+  /** Price and liquidity now: simulated for a synthetic pool, the market's for a real one. */
+  private marketFor(rec: PositionRecord, simElapsed: number): MarketNow | null {
+    if (rec.profile) {
+      return {
+        priceUsd: priceAt(rec.profile, simElapsed),
+        liquidityUsd: liquidityAt(rec.profile, simElapsed),
+        rugAt: rec.profile.rugAt,
+      };
+    }
+    const q = this.market?.get(rec.position.tokenMint);
+    // a real pool's rugs are caught by the rug watcher, not simulated
+    return q ? { priceUsd: q.priceUsd, liquidityUsd: q.liquidityUsd ?? 0, rugAt: null } : null;
   }
 
   start(): void {
@@ -61,14 +89,19 @@ export class ExitEngine {
       if (!rec) continue;
       const wallElapsed = now - p.openedAt;
       const simElapsed = wallElapsed * this.timeScale;
-      const newPrice = priceAt(rec.profile, simElapsed);
-      const updated = this.store.tickPrice(p.id, newPrice);
+      const m = this.marketFor(rec, simElapsed);
+      if (!m) {
+        this.handleUnpriced(rec, now, simElapsed);
+        continue;
+      }
+      this.unpricedSince.delete(p.id);
+      const updated = this.store.tickPrice(p.id, m.priceUsd);
       if (!updated) continue;
 
-      const decision = this.evaluate(updated, simElapsed, rec.profile.rugAt);
+      const decision = this.evaluate(updated, simElapsed, m.rugAt);
       if (decision.kind === "partial-tp") {
         this.partialFills++;
-        const liq = liquidityAt(rec.profile, simElapsed);
+        const liq = m.liquidityUsd;
         const sell = paperExecutor.sell(
           updated.entryPriceUsd,
           updated.currentPriceUsd,
@@ -81,7 +114,7 @@ export class ExitEngine {
       } else if (decision.kind === "full-close") {
         this.fullCloses++;
         if (decision.reason === "rug-pull") this.rugBroadcasts++;
-        const liq = liquidityAt(rec.profile, simElapsed);
+        const liq = m.liquidityUsd;
         const sell = paperExecutor.sell(
           updated.entryPriceUsd,
           updated.currentPriceUsd,
@@ -95,6 +128,24 @@ export class ExitEngine {
       }
       this.store.emitUpdate(updated.id);
     }
+  }
+
+  /**
+   * A token nobody quotes cannot be sold, so its paper value is gone. It is
+   * written off at $0 once its time window has passed and it has stayed
+   * unpriced for a while; before that it simply waits for a price.
+   */
+  private handleUnpriced(rec: PositionRecord, now: number, simElapsed: number): void {
+    const p = rec.position;
+    const since = this.unpricedSince.get(p.id) ?? now;
+    this.unpricedSince.set(p.id, since);
+    const pastWindow = simElapsed >= p.timeExitMin * 60_000;
+    if (!pastWindow || now - since < UNPRICED_WRITE_OFF_MS) return;
+    this.unpricedSince.delete(p.id);
+    this.fullCloses++;
+    const sell = paperExecutor.sell(p.entryPriceUsd, 0, p.remainingTokens, 0, "time-exit");
+    this.store.closeFully(p.id, sell.proceedsUsd, sellResultToTrade(p.id, sell), "time-exit");
+    log.warn({ id: p.id.slice(0, 8), mint: p.tokenMint.slice(0, 8) }, "no market price past the time window — written off at $0");
   }
 
   private evaluate(p: Position, simElapsedMs: number, rugAt: number | null): ExitDecision {
@@ -153,7 +204,7 @@ export class ExitEngine {
     if (!rec) return;
     const p = rec.position;
     const simElapsed = (Date.now() - p.openedAt) * this.timeScale;
-    const liq = liquidityAt(rec.profile, simElapsed);
+    const liq = this.marketFor(rec, simElapsed)?.liquidityUsd ?? 0;
     const sell = paperExecutor.sell(
       p.entryPriceUsd,
       p.currentPriceUsd,
@@ -174,7 +225,7 @@ export class ExitEngine {
       const rec = this.store.get(p.id);
       if (!rec) continue;
       const simElapsed = (Date.now() - p.openedAt) * this.timeScale;
-      const liq = liquidityAt(rec.profile, simElapsed);
+      const liq = this.marketFor(rec, simElapsed)?.liquidityUsd ?? 0;
       const sell = paperExecutor.sell(
         p.entryPriceUsd,
         p.currentPriceUsd,

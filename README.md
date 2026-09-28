@@ -38,8 +38,8 @@ buy** and **when you sell**:
                                     └──────────────┬──────────────┘
                                                    ▼ snipe
                                     ┌─────────────────────────────┐
-                                    │ Trader (paper)              │  size · concurrency · exposure · rate limits
-                                    │  ◀── drawdown circuit gate  │
+                                    │ Trader (paper)              │  buys at the Jupiter market price
+                                    │  ◀── drawdown circuit gate  │  size · concurrency · exposure · rate limits
                                     └──────────────┬──────────────┘
                                                    ▼
                                     ┌─────────────────────────────┐
@@ -76,7 +76,13 @@ analytics page can show which filters actually predict winners.
   +900% (`TP_LADDER`).
 - **Stop-loss** at -40%, a **trailing stop** that arms after +200%, and a **time exit** for
   positions that never move.
-- **Rug watcher**: polls liquidity for every open position and force-sells when it drops sharply.
+- **Real prices**: a paper trade on a real pool is bought, marked and sold at the market price
+  from Jupiter's free price API, polled every 3 seconds; a pool nobody quotes is not bought.
+  Only synthetic-feed pools use the price simulator.
+- **Rug watcher**: reads each open position's liquidity from the same feed and force-sells when it
+  drops sharply (`RUG_DETECTION_LP_DROP_PCT`).
+- **Restarts**: positions left open by the last run are restored and keep their exits, and the
+  bankroll carries over everything already closed.
 - **Position limits**: 1% of bankroll per trade, at most 10 open positions, a 30% total exposure
   cap, and a limit on entries per minute.
 - **Drawdown circuit**: halts new entries for 24 hours after a 10% daily loss or 20 losses in a

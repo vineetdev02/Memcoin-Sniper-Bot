@@ -47,8 +47,14 @@ function estimateSlippagePct(sizeUsd: number, liquidityUsd: number): number {
   return Math.min(25, Math.max(0.1, ratio * 100));
 }
 
+/** The market at the moment of a paper buy; absent for synthetic pools. */
+export interface EntryMarket {
+  priceUsd: number;
+  liquidityUsd: number | null;
+}
+
 export interface PaperExecutor {
-  buy(verdict: OrchestratorVerdict, pool: PoolEvent, sizeUsd: number): PaperBuyResult;
+  buy(verdict: OrchestratorVerdict, pool: PoolEvent, sizeUsd: number, market?: EntryMarket): PaperBuyResult;
   sell(
     entryPriceUsd: number,
     currentPriceUsd: number,
@@ -59,10 +65,11 @@ export interface PaperExecutor {
 }
 
 export const paperExecutor: PaperExecutor = {
-  buy(verdict, pool, sizeUsd) {
-    const detectedAt = pool.detectedAt;
+  buy(verdict, pool, sizeUsd, market) {
     const fillDelay = Math.floor(rand(800, 1500));
-    const fillTime = detectedAt + fillDelay;
+    // With a market price the buy happens now, at that price. Without one it is
+    // a synthetic pool, bought as if right after launch at its generated price.
+    const fillTime = (market ? Date.now() : pool.detectedAt) + fillDelay;
 
     const jitoTipSol = env.JITO_TIP_LAMPORTS / LAMPORTS_PER_SOL;
     const networkSol = NETWORK_FEE_LAMPORTS / LAMPORTS_PER_SOL;
@@ -92,11 +99,13 @@ export const paperExecutor: PaperExecutor = {
       };
     }
 
-    const baseSlip = estimateSlippagePct(sizeUsd, pool.initialLiquidityUsd) / 100;
+    const liquidityUsd = market ? (market.liquidityUsd ?? 0) : pool.initialLiquidityUsd;
+    const baseSlip = estimateSlippagePct(sizeUsd, liquidityUsd) / 100;
     const sandwichHit = Math.random() < 0.30;
     const mevPenaltyPct = sandwichHit ? rand(0.005, 0.03) : 0;
 
-    const effectivePriceUsd = pool.initialPriceUsd * (1 + baseSlip + mevPenaltyPct);
+    const basePriceUsd = market ? market.priceUsd : pool.initialPriceUsd;
+    const effectivePriceUsd = basePriceUsd * (1 + baseSlip + mevPenaltyPct);
     const tokensReceived = sizeUsd / effectivePriceUsd;
 
     return {

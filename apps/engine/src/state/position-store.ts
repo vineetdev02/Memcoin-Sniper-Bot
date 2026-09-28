@@ -14,9 +14,11 @@ import type { PriceProfile } from "../execution/price-simulator.js";
 
 const log = childLogger("position-store");
 
-interface PositionRecord {
+export interface PositionRecord {
   position: Position;
-  profile: PriceProfile;
+  // Set only for synthetic pools, whose price is simulated. A real pool's
+  // price comes from the market feed.
+  profile?: PriceProfile;
   trades: Trade[];
 }
 
@@ -45,7 +47,25 @@ export class PositionStore extends EventEmitter {
   private losses = 0;
   private closedRecent: Position[] = [];
 
-  add(position: Position, profile: PriceProfile, openTrade: Trade): void {
+  /**
+   * Take back positions a previous run left open, as they were: no persist,
+   * no "opened" event (alerts and invested totals already counted them).
+   */
+  restore(records: PositionRecord[]): void {
+    for (const rec of records) {
+      if (this.open.has(rec.position.id)) continue;
+      this.open.set(rec.position.id, rec);
+    }
+  }
+
+  /** Totals from positions closed in earlier runs, so a restart keeps the bankroll. */
+  seedTotals(t: { realizedPnlUsd: number; wins: number; losses: number }): void {
+    this.totalRealizedPnlUsd += t.realizedPnlUsd;
+    this.wins += t.wins;
+    this.losses += t.losses;
+  }
+
+  add(position: Position, profile: PriceProfile | undefined, openTrade: Trade): void {
     if (this.open.has(position.id)) {
       log.warn({ id: position.id }, "duplicate position id; skipping");
       return;

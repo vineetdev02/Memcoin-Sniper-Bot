@@ -1,39 +1,37 @@
 import { childLogger } from "../utils/logger.js";
 import { env } from "../config/env.js";
-import { fetchPair, invalidate } from "../feeds/dexscreener-client.js";
+import type { MarketFeed } from "../execution/market-price.js";
 import type { PositionStore } from "../state/position-store.js";
 import type { ExitEngine } from "./exit-engine.js";
 
 const log = childLogger("rug-watcher");
 
-interface WatchEntry {
-  positionId: string;
-  poolAddress: string;
-  baselineLiquidityUsd: number;
-  lastLiquidityUsd: number;
-  consecutiveMissing: number;
-}
-
 const POLL_INTERVAL_MS = 5_000;
-const MAX_CONSECUTIVE_MISSES = 5; // ~25s of no data → stop polling (likely synthetic / not indexed)
 
 /**
- * Real-mode rug-pull watcher. Polls DexScreener liquidity for each open
- * position; on a drop > RUG_DETECTION_LP_DROP_PCT from the baseline, forces an
- * emergency close through the exit-engine. Skipped entirely when the synthetic
- * feed is active — the price-simulator already drives rug exits there.
+ * Real-mode rug watch. Reads each open position's liquidity from the market
+ * feed and, on a drop of RUG_DETECTION_LP_DROP_PCT from the first reading,
+ * forces an emergency close through the exit engine.
+ *
+ * It used to ask DexScreener's pairs endpoint about the token mint, which
+ * always answers with no pair — so it never saw a real pool, and the only
+ * "rug-pull" exits were the price simulator's. Positions on synthetic pools
+ * keep those simulated rugs and are skipped here.
  */
 export class RugWatcher {
   private timer: NodeJS.Timeout | null = null;
-  private readonly entries = new Map<string, WatchEntry>();
   private readonly store: PositionStore;
   private readonly exits: ExitEngine;
+  private readonly feed: MarketFeed;
   private readonly dropPct: number;
+  // position id → liquidity at the first reading
+  private readonly baselines = new Map<string, number>();
   private detections = 0;
 
-  constructor(store: PositionStore, exits: ExitEngine) {
+  constructor(store: PositionStore, exits: ExitEngine, feed: MarketFeed) {
     this.store = store;
     this.exits = exits;
+    this.feed = feed;
     this.dropPct = env.RUG_DETECTION_LP_DROP_PCT;
   }
 
@@ -43,93 +41,52 @@ export class RugWatcher {
       log.info("synthetic feed active — rug-watcher disabled (price-simulator handles rugs)");
       return;
     }
-    this.store.on("position-opened", (e) => this.watch(e.position.id, e.position.poolAddress));
-    this.store.on("position-closed", (e) => this.unwatch(e.position.id));
-    this.timer = setInterval(() => void this.poll(), POLL_INTERVAL_MS);
+    this.timer = setInterval(() => this.poll(), POLL_INTERVAL_MS);
     log.info({ pollMs: POLL_INTERVAL_MS, dropPct: this.dropPct }, "rug-watcher started");
   }
 
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
-    this.entries.clear();
+    this.baselines.clear();
   }
 
   getStats() {
-    return { tracked: this.entries.size, detections: this.detections };
+    return { tracked: this.baselines.size, detections: this.detections };
   }
 
-  private async watch(positionId: string, poolAddress: string): Promise<void> {
-    // Establish baseline liquidity. Use the *first* DexScreener reading we can
-    // get (within ~30s) so a tiny entry liquidity in the pool record doesn't
-    // produce false rugs against a now-much-bigger pool.
-    invalidate(poolAddress);
-    const pair = await fetchPair(poolAddress);
-    const liq = pair?.liquidity?.usd ?? 0;
-    if (liq <= 0) {
-      log.debug({ positionId, poolAddress }, "no liquidity baseline yet — will retry next poll");
-    }
-    this.entries.set(positionId, {
-      positionId,
-      poolAddress,
-      baselineLiquidityUsd: liq,
-      lastLiquidityUsd: liq,
-      consecutiveMissing: 0,
-    });
-  }
+  poll(): void {
+    const open = new Set<string>();
+    for (const p of this.store.list()) {
+      open.add(p.id);
+      if (this.store.get(p.id)?.profile) continue;
+      const liq = this.feed.get(p.tokenMint)?.liquidityUsd;
+      if (liq === undefined || liq === null) continue;
 
-  private unwatch(positionId: string): void {
-    this.entries.delete(positionId);
-  }
-
-  private async poll(): Promise<void> {
-    if (this.entries.size === 0) return;
-    const entries = [...this.entries.values()];
-    await Promise.all(entries.map((e) => this.checkOne(e)));
-  }
-
-  private async checkOne(entry: WatchEntry): Promise<void> {
-    // Bypass cache so we get a fresh reading each poll
-    invalidate(entry.poolAddress);
-    const pair = await fetchPair(entry.poolAddress);
-    const liq = pair?.liquidity?.usd;
-    if (liq === undefined || liq === null) {
-      entry.consecutiveMissing++;
-      if (entry.consecutiveMissing >= MAX_CONSECUTIVE_MISSES) {
-        log.warn({ ...entry }, "dropping rug watch — pool not indexed by DexScreener");
-        this.entries.delete(entry.positionId);
+      const baseline = this.baselines.get(p.id);
+      if (baseline === undefined) {
+        this.baselines.set(p.id, liq);
+        continue;
       }
-      return;
-    }
-    entry.consecutiveMissing = 0;
+      if (baseline <= 0) continue;
 
-    // First successful reading — lock in baseline
-    if (entry.baselineLiquidityUsd <= 0) {
-      entry.baselineLiquidityUsd = liq;
-      entry.lastLiquidityUsd = liq;
-      log.info(
-        { positionId: entry.positionId, baselineLiquidityUsd: liq },
-        "rug-watcher baseline set",
-      );
-      return;
+      const dropPct = ((baseline - liq) / baseline) * 100;
+      if (dropPct >= this.dropPct) {
+        this.detections++;
+        log.warn(
+          {
+            positionId: p.id,
+            mint: p.tokenMint.slice(0, 8),
+            baselineUsd: baseline.toFixed(0),
+            currentUsd: liq.toFixed(0),
+            dropPct: dropPct.toFixed(1),
+          },
+          "RUG DETECTED — forcing emergency close",
+        );
+        this.exits.forceClose(p.id, "rug-pull");
+        this.baselines.delete(p.id);
+      }
     }
-
-    entry.lastLiquidityUsd = liq;
-    const dropPct = ((entry.baselineLiquidityUsd - liq) / entry.baselineLiquidityUsd) * 100;
-    if (dropPct >= this.dropPct) {
-      this.detections++;
-      log.warn(
-        {
-          positionId: entry.positionId,
-          pool: entry.poolAddress,
-          baselineUsd: entry.baselineLiquidityUsd.toFixed(0),
-          currentUsd: liq.toFixed(0),
-          dropPct: dropPct.toFixed(1),
-        },
-        "RUG DETECTED — forcing emergency close",
-      );
-      this.exits.forceClose(entry.positionId, "rug-pull");
-      this.entries.delete(entry.positionId);
-    }
+    for (const id of this.baselines.keys()) if (!open.has(id)) this.baselines.delete(id);
   }
 }

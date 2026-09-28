@@ -32,6 +32,8 @@ const envSchema = z.object({
   RPC_MAX_RPS: z.coerce.number().int().positive().default(8),
   // quote-api.jup.ag/v6 no longer answers; lite-api is the keyless successor
   JUPITER_QUOTE_API: z.string().url().default("https://lite-api.jup.ag/swap/v1"),
+  // prices for paper trades: entries, exits and the rug watch
+  JUPITER_PRICE_API: z.string().url().default("https://lite-api.jup.ag/price/v3"),
   RUGCHECK_API_BASE: z.string().url().default("https://api.rugcheck.xyz/v1"),
 
   // Data APIs

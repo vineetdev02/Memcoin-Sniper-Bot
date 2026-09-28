@@ -12,6 +12,8 @@ import { PositionStore } from "./state/position-store.js";
 import { PnlTracker } from "./analytics/pnl-tracker.js";
 import { Trader } from "./execution/trader.js";
 import { BotSwitch } from "./execution/bot-switch.js";
+import { MarketFeed } from "./execution/market-price.js";
+import { restorePositions } from "./state/position-restore.js";
 import { limitRpcRate, rpcUsage } from "./utils/rpc-meter.js";
 import { ExitEngine } from "./exits/exit-engine.js";
 import { RugWatcher } from "./exits/rug-watcher.js";
@@ -82,10 +84,25 @@ async function main() {
   const positionStore = new PositionStore();
   const pnl = new PnlTracker(positionStore);
   const circuit = new DrawdownCircuit(positionStore, pnl);
-  const trader = new Trader(positionStore, pnl, circuit);
-  const exitEngine = new ExitEngine(positionStore, env.SYNTHETIC_FEED ? 30 : 1);
-  const rugWatcher = new RugWatcher(positionStore, exitEngine);
+  // Market prices (Jupiter, free) for every open position on a real pool.
+  // Synthetic positions keep their simulated price and are not polled.
+  const market = new MarketFeed(() =>
+    positionStore
+      .list()
+      .filter((p) => !positionStore.get(p.id)?.profile)
+      .map((p) => p.tokenMint),
+  );
+  const trader = new Trader(positionStore, pnl, circuit, market);
+  const exitEngine = new ExitEngine(positionStore, env.SYNTHETIC_FEED ? 30 : 1, market);
+  const rugWatcher = new RugWatcher(positionStore, exitEngine, market);
   const alerter = createAlerter({ store: positionStore, circuit, pnl });
+
+  // What the last run left open carries on; what it closed stays in the totals.
+  try {
+    await restorePositions(positionStore, pnl);
+  } catch (err) {
+    logger.error({ err }, "could not restore positions from the last run — starting without them");
+  }
 
   detector.on("pool", (event) => {
     trader.cachePool(event);
@@ -96,7 +113,7 @@ async function main() {
     void publishVerdict(v);
     if (v.decision === "snipe") {
       const pool = trader.resolvePool(v);
-      if (pool) trader.handleVerdict(v, pool);
+      if (pool) void trader.handleVerdict(v, pool);
       else logger.warn({ poolAddress: v.poolAddress }, "snipe verdict missing pool cache");
     }
   });
@@ -117,6 +134,7 @@ async function main() {
   // Before circuit.start(): the alerter must hear a close before the halt it triggers.
   alerter?.start();
   circuit.start();
+  market.start();
   exitEngine.start();
   rugWatcher.start();
   pnl.start(60_000);
@@ -212,6 +230,7 @@ async function main() {
       synthetic?.stop();
       rugWatcher.stop();
       exitEngine.stop();
+      market.stop();
       circuit.stop();
       pnl.stop();
       await socketServer.stop();

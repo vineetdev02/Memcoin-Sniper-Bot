@@ -18,6 +18,11 @@ export interface PriceProfile {
 
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 
+/** Synthetic pools carry their own answers; everything else trades on the market. */
+export function isSyntheticPool(pool: PoolEvent): boolean {
+  return (pool.rawEvent as { synthetic?: boolean } | undefined)?.synthetic === true;
+}
+
 function extractBucket(pool: PoolEvent): Bucket {
   const raw = pool.rawEvent as { bucket?: Bucket } | undefined;
   return raw?.bucket ?? "MIXED";

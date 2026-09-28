@@ -29,7 +29,13 @@ export class PnlTracker {
     store.on("position-closed", ({ position }) => this.onClose(position));
   }
 
-  private onClose(p: Position): void {
+  /** Positions closed and opened by earlier runs, so a restart keeps the history. */
+  seed(closed: Pick<Position, "realizedPnlUsd" | "entrySizeUsd">[], investedUsd: number): void {
+    for (const p of closed) this.onClose(p);
+    this.totalInvestedUsd += investedUsd;
+  }
+
+  private onClose(p: Pick<Position, "realizedPnlUsd" | "entrySizeUsd">): void {
     this.totalTrades++;
     const pct = (p.realizedPnlUsd / p.entrySizeUsd) * 100;
     if (p.realizedPnlUsd >= 0) {
