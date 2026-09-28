@@ -51,6 +51,11 @@ export const BUILT_IN_PRESETS: ReadonlyArray<{
         "dev-wallet": true,
         "top-holders": true,
         "liquidity-min": true,
+        // The two costliest filters in RPC calls. Insider can only pass while
+        // the rugger list is empty; bundle mostly sees too few early buyers
+        // this soon after launch. Turn back on from the Filters page.
+        "bundled-launch": false,
+        "insider-detection": false,
       },
       thresholds: {
         minFilterScore: 80,
@@ -73,6 +78,9 @@ export const BUILT_IN_PRESETS: ReadonlyArray<{
         "mint-authority": true,
         "freeze-authority": true,
         "dev-wallet": true,
+        // costliest in RPC calls; see Safe Sniper
+        "bundled-launch": false,
+        "insider-detection": false,
       },
       thresholds: {
         minFilterScore: 55,
