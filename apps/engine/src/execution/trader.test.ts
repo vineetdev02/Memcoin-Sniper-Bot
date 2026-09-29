@@ -5,7 +5,7 @@ import { Trader } from "./trader.js";
 import type { PositionStore } from "../state/position-store.js";
 import type { PnlTracker } from "../analytics/pnl-tracker.js";
 import type { DrawdownCircuit } from "../risk/drawdown-circuit.js";
-import type { MarketFeed, MarketQuote } from "./market-price.js";
+import type { EntryQuote, MarketFeed } from "./market-price.js";
 
 const verdict = { decision: "snipe", poolAddress: "P", totalScore: 90 } as OrchestratorVerdict;
 const pool = { poolAddress: "P", tokenMint: "MintMintMint" } as PoolEvent;
@@ -59,7 +59,7 @@ describe("entries", () => {
     Math.random = realRandom;
   });
 
-  function makeLiveTrader(quote: MarketQuote | undefined) {
+  function makeLiveTrader(quote: EntryQuote) {
     const added: { position: Position; profile: unknown }[] = [];
     let quoted = 0;
     const store = {
@@ -69,7 +69,7 @@ describe("entries", () => {
     const pnl = { buildSnapshot: () => ({ openExposureUsd: 0, balanceUsd: 10_000 }) } as unknown as PnlTracker;
     const circuit = { canTrade: () => ({ allowed: true }) } as unknown as DrawdownCircuit;
     const feed = {
-      quote: async () => {
+      entryQuote: async () => {
         quoted++;
         return quote;
       },
@@ -82,7 +82,7 @@ describe("entries", () => {
   const realPool = { poolAddress: "P", tokenMint: "MintMintMint", initialPriceUsd: 0.000005, initialLiquidityUsd: 5400, detectedAt: 0 } as PoolEvent;
 
   test("a real pool nobody quotes is not bought, and its rate-limit slot is given back", async () => {
-    const { trader, added } = makeLiveTrader(undefined);
+    const { trader, added } = makeLiveTrader({ ok: false, reason: "no market price" });
     await trader.handleVerdict(verdict, realPool);
     assert.equal(added.length, 0);
     assert.equal(trader.getStats().skippedNoPrice, 1);
@@ -91,17 +91,17 @@ describe("entries", () => {
     assert.equal(trader.getStats().skippedRate, 0);
   });
 
-  test("a real pool is bought at its market price, not the parser's estimate", async () => {
-    const { trader, added } = makeLiveTrader({ priceUsd: 2, liquidityUsd: 100_000, at: Date.now() });
+  test("a real pool is bought at what a real buy would pay, not the parser's estimate", async () => {
+    const { trader, added } = makeLiveTrader({ ok: true, priceUsd: 2, liquidityUsd: 100_000, premiumPct: 3 });
     await trader.handleVerdict(verdict, realPool);
     assert.equal(added.length, 1);
-    const entry = added[0]!.position.entryPriceUsd;
-    assert.ok(entry >= 2 && entry < 2.01, `entry ${entry} should be the market price plus slippage`);
+    // the executable quote already carries the impact: no second slippage charge
+    assert.equal(added[0]!.position.entryPriceUsd, 2);
     assert.equal(added[0]!.profile, undefined, "a real pool is priced by the feed, not simulated");
   });
 
   test("a synthetic pool keeps its simulated price and never asks the market", async () => {
-    const { trader, added, quoted } = makeLiveTrader(undefined);
+    const { trader, added, quoted } = makeLiveTrader({ ok: false, reason: "unused" });
     const synthetic = { ...realPool, rawEvent: { synthetic: true, bucket: "SOLID" } } as PoolEvent;
     await trader.handleVerdict(verdict, synthetic);
     assert.equal(quoted(), 0);

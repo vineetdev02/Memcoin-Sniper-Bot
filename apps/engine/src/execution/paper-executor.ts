@@ -51,6 +51,8 @@ function estimateSlippagePct(sizeUsd: number, liquidityUsd: number): number {
 export interface EntryMarket {
   priceUsd: number;
   liquidityUsd: number | null;
+  // the price came from an executable quote for this size, impact included
+  priceIncludesImpact?: boolean;
 }
 
 export interface PaperExecutor {
@@ -100,7 +102,8 @@ export const paperExecutor: PaperExecutor = {
     }
 
     const liquidityUsd = market ? (market.liquidityUsd ?? 0) : pool.initialLiquidityUsd;
-    const baseSlip = estimateSlippagePct(sizeUsd, liquidityUsd) / 100;
+    // an executable quote already paid the price impact; do not charge it twice
+    const baseSlip = market?.priceIncludesImpact ? 0 : estimateSlippagePct(sizeUsd, liquidityUsd) / 100;
     const sandwichHit = Math.random() < 0.30;
     const mevPenaltyPct = sandwichHit ? rand(0.005, 0.03) : 0;
 

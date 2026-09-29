@@ -47,7 +47,7 @@ function position(openedAgoMs: number): Position {
 function setup(openedAgoMs: number, price: number | null) {
   const store = quietStore();
   const prices = new Map<string, MarketQuote>();
-  if (price !== null) prices.set("MINT", { priceUsd: price, liquidityUsd: 50_000, at: Date.now() });
+  if (price !== null) prices.set("MINT", { priceUsd: price, liquidityUsd: 50_000, decimals: 6, at: Date.now() });
   const feed = new MarketFeed(() => ["MINT"], async () => prices);
   const engine = new ExitEngine(store, 1, feed);
   store.add(position(openedAgoMs), undefined, {} as Trade);

@@ -26,7 +26,7 @@ describe("rug watcher on market liquidity", () => {
     let liq = 10_000;
     const feed = new MarketFeed(
       () => ["REAL", "SIM"],
-      async (mints) => new Map(mints.map((m): [string, MarketQuote] => [m, { priceUsd: 1, liquidityUsd: liq, at: 0 }])),
+      async (mints) => new Map(mints.map((m): [string, MarketQuote] => [m, { priceUsd: 1, liquidityUsd: liq, decimals: 6, at: 0 }])),
     );
     const closed: string[] = [];
     const exits = { forceClose: (id: string) => closed.push(id) } as unknown as ExitEngine;

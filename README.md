@@ -78,9 +78,12 @@ analytics page can show which filters actually predict winners.
   +900% (`TP_LADDER`).
 - **Stop-loss** at -40%, a **trailing stop** that arms after +200%, and a **time exit** for
   positions that never move.
-- **Real prices**: a paper trade on a real pool is bought, marked and sold at the market price
-  from Jupiter's free price API, polled every 3 seconds; a pool nobody quotes is not bought.
-  Only synthetic-feed pools use the price simulator.
+- **Real prices**: a paper trade on a real pool enters at what a real buy of that size would pay
+  (Jupiter's executable quote), and only when Jupiter's price index agrees within -20%/+25% — an
+  index 114× too high once cost a whole position. It is then marked and sold at the index,
+  polled every 3 seconds; a move of 3× or more in one poll is held until the next poll confirms
+  it, so one bad tick cannot fire a take-profit or a stop. Only synthetic-feed pools use the
+  price simulator.
 - **Rug watcher**: reads each open position's liquidity from the same feed and force-sells when it
   drops sharply (`RUG_DETECTION_LP_DROP_PCT`).
 - **Evaluation delay**: a new pool is judged `EVAL_DELAY_SEC` (default 90) after it appears. At

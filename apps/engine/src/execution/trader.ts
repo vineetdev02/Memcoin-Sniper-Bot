@@ -3,7 +3,7 @@ import type { OrchestratorVerdict, PoolEvent, Position } from "@sniperbot/shared
 import { env } from "../config/env.js";
 import { childLogger } from "../utils/logger.js";
 import { buildTPLadder, PositionStore } from "../state/position-store.js";
-import { paperExecutor, buyResultToTrade } from "./paper-executor.js";
+import { paperExecutor, buyResultToTrade, type EntryMarket } from "./paper-executor.js";
 import { buildProfile, isSyntheticPool } from "./price-simulator.js";
 import type { MarketFeed } from "./market-price.js";
 import type { PnlTracker } from "../analytics/pnl-tracker.js";
@@ -149,11 +149,19 @@ export class Trader {
 
   private async open(verdict: OrchestratorVerdict, pool: PoolEvent, sizeUsd: number): Promise<boolean> {
     const synthetic = isSyntheticPool(pool);
-    const market = synthetic ? undefined : await this.feed?.quote(pool.tokenMint);
-    if (!synthetic && !market) {
-      this.skippedNoPrice++;
-      log.warn({ mint: pool.tokenMint.slice(0, 8) }, "no market price — not trading it");
-      return false;
+    let market: EntryMarket | undefined;
+    if (!synthetic) {
+      // Enter at what a real buy of this size would pay, and only when the
+      // price index agrees — an index 114× too high once cost a whole position.
+      const entry = this.feed
+        ? await this.feed.entryQuote(pool.tokenMint, sizeUsd)
+        : { ok: false as const, reason: "no market feed" };
+      if (!entry.ok) {
+        this.skippedNoPrice++;
+        log.warn({ mint: pool.tokenMint.slice(0, 8), reason: entry.reason }, "no trustworthy entry price — not trading it");
+        return false;
+      }
+      market = { priceUsd: entry.priceUsd, liquidityUsd: entry.liquidityUsd, priceIncludesImpact: true };
     }
     if (!this.enabled) {
       // switched off while the price was being fetched
