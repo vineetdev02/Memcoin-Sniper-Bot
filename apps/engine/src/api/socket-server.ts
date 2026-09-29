@@ -291,7 +291,11 @@ export class SocketServer {
 
     this.detector.on("pool", (event) => this.io.emit("pool:new", event));
     this.orchestrator.on("verdict", (verdict) => this.io.emit("verdict:new", verdict));
-    this.positionStore.on("position-opened", (e) => this.io.emit("position:opened", e));
+    this.positionStore.on("position-opened", (e) => {
+      this.io.emit("position:opened", e);
+      // the buy moves "invested" and exposure now, not at the next close
+      this.io.emit("bankroll:snapshot", this.pnl.buildSnapshot());
+    });
     this.positionStore.on("position-update", (e) => this.io.emit("position:update", e));
     this.positionStore.on("position-closed", (e) => {
       this.io.emit("position:closed", e);
@@ -338,10 +342,13 @@ export class SocketServer {
       this.http.once("error", reject);
       this.http.listen(env.ENGINE_HTTP_PORT, () => {
         log.info({ port: env.ENGINE_HTTP_PORT }, "Socket.io server listening");
-        this.statusInterval = setInterval(
-          () => this.io.emit("system:status", this.buildStatus()),
-          2000,
-        );
+        // The bankroll rides along: take-profits and unrealized P&L change it
+        // between opens and closes, and the dashboard only asked for it once,
+        // on connect — so "invested" and "realized" went stale until a close.
+        this.statusInterval = setInterval(() => {
+          this.io.emit("system:status", this.buildStatus());
+          this.io.emit("bankroll:snapshot", this.pnl.buildSnapshot());
+        }, 2000);
         resolve();
       });
     });
