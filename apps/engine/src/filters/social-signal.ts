@@ -60,6 +60,15 @@ export const socialSignalFilter: Filter = {
     }
 
     const { score, channels } = scorePair(pair);
+    // DexScreener shows a token's website and socials only once its team buys
+    // a profile; most launches never do, whatever they have elsewhere. Missing
+    // profile data is "unknown", not "no socials" — it used to fail 95% of pools.
+    if (score === 0) {
+      return makeResult("social-signal", "skip", "no DexScreener profile — socials there are a paid listing", {
+        metadata: { socialScore: 0, channels },
+        durationMs: Date.now() - start,
+      });
+    }
     const ok = score >= MIN_SCORE;
     return makeResult(
       "social-signal",

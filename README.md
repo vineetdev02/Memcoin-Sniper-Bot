@@ -55,7 +55,7 @@ buy** and **when you sell**:
 
 | Filter | Rejects when | Weight |
 | --- | --- | --- |
-| `honeypot-sim` | a simulated sell through Jupiter fails, or the sell tax is above the limit | 15 |
+| `honeypot-sim` | a 0.01 SOL buy-and-sell round trip through Jupiter cannot sell, or costs more than the max sell tax (a pump.fun curve passes: its program executes every sell) | 15 |
 | `dev-wallet` | the creator is a known rugger or has a high rug rate | 12 |
 | `mint-authority` | the dev can still mint more supply | 10 |
 | `freeze-authority` | the dev can still freeze holders' tokens | 10 |
@@ -66,7 +66,7 @@ buy** and **when you sell**:
 | `liquidity-min` | liquidity is too thin to exit, or too deep to still be early | 5 |
 | `volume-velocity` | buy/sell flow and unique buyers look inorganic | 4 |
 | `anti-sniper-war` | the first block was already crowded with snipers | 4 |
-| `social-signal` | there is too little social presence (website, X, Telegram, DexScreener boost) | 3 |
+| `social-signal` | its DexScreener profile shows too little social presence (no profile at all is unknown: profiles are paid) | 3 |
 
 Every filter can be toggled and tuned from the dashboard, and settings can be saved as presets
 (**Safe**, **Aggressive** and **Learning** ship built in). Every verdict is stored, so the
