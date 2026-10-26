@@ -8,6 +8,7 @@ It watches pump.fun, PumpSwap and Raydium for new pools, runs every launch throu
 honeypot checks, paper-trades the survivors with disciplined exits, and shows all of it on a live
 dashboard.
 
+[![CI](https://github.com/vineetdev02/Memcoin-Sniper-Bot/actions/workflows/ci.yml/badge.svg)](https://github.com/vineetdev02/Memcoin-Sniper-Bot/actions/workflows/ci.yml)
 ![Solana](https://img.shields.io/badge/Solana-mainnet-9945FF?logo=solana&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
 ![Node](https://img.shields.io/badge/node-%E2%89%A522-339933?logo=node.js&logoColor=white)
@@ -339,9 +340,12 @@ pnpm typecheck
 pnpm test
 ```
 
-121 tests across the filters, parsers, exit engine, rug watcher, trader, position store and
-Telegram client. They run on Node's built-in test runner and need no network, database or API
-key. A `.env` copied from `.env.example` is all they read.
+126 tests across the filters, parsers, exit engine, rug watcher, trader, position store, Telegram
+client and the dashboard's money formatting. They run on Node's built-in test runner and need no
+network, database or API key. A `.env` copied from `.env.example` is all they read.
+
+[CI](.github/workflows/ci.yml) runs the typecheck, the tests and a production build of the
+dashboard on every push and pull request.
 
 ## Security
 
