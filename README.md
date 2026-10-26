@@ -178,6 +178,23 @@ tips, so paper results are not flattering fiction.
 
 **Requirements:** Node.js 22 or newer, pnpm 10, and Docker.
 
+### Try it in one command
+
+```bash
+git clone https://github.com/vineetdev02/Memcoin-Sniper-Bot.git
+cd Memcoin-Sniper-Bot
+pnpm install
+pnpm demo
+```
+
+Open the dashboard URL it prints. Fake launches start arriving within seconds, get filtered, and
+the survivors are paper-traded, rugs and stop-losses included. The demo needs no API key and no
+`.env`, runs its own throwaway Postgres and Redis on free ports, and uses nothing from your `.env`
+if you have one, so your own keys and paper-trading history are never touched. Ctrl+C stops everything and deletes the
+demo database.
+
+### Full setup
+
 ```bash
 git clone https://github.com/vineetdev02/Memcoin-Sniper-Bot.git
 cd Memcoin-Sniper-Bot
@@ -300,6 +317,7 @@ than run on a typo.
 
 | Command | What it does |
 | --- | --- |
+| `pnpm demo` | the whole bot on the synthetic feed, with a throwaway database, in one command |
 | `pnpm dev:engine` / `pnpm dev:dashboard` | run with reload on save |
 | `pnpm typecheck` | `tsc --noEmit` across all packages |
 | `pnpm test` | unit tests (Node's built-in runner, no extra dependencies) |
@@ -328,6 +346,7 @@ apps/
   dashboard/              Next.js 15 + Tailwind + Zustand
 packages/
   shared/                 types shared by engine and dashboard
+scripts/demo.mjs          `pnpm demo`: engine + dashboard on the synthetic feed, throwaway database
 docker-compose.yml        Redis + Postgres for local development
 MEMECOIN_SNIPER_PLAN.md   the full design and phase plan
 FILTER_QUALITY_PLAN.md    how the filters get validated against labelled launches

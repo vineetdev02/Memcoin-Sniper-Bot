@@ -4,6 +4,7 @@
   "private": true,
   "description": "Solana memecoin sniper bot — paper trading first",
   "scripts": {
+    "demo": "node scripts/demo.mjs",
     "dev:engine": "pnpm --filter @sniperbot/engine dev",
     "dev:dashboard": "pnpm --filter @sniperbot/dashboard dev",
     "build": "pnpm -r build",
