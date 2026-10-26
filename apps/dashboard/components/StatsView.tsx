@@ -146,7 +146,7 @@ function StatsBody({ stats }: { stats: TradeStatsWindow }) {
             />
             <Card
               label="Lost"
-              value={`-${formatUsd(stats.totalGrossLossUsd, { compact: true })}`}
+              value={formatUsd(-stats.totalGrossLossUsd, { compact: true })}
               sub={`${stats.losses} losing trades`}
               icon={TrendingDown}
               tone="text-accent-red"

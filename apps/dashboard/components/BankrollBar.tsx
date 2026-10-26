@@ -62,7 +62,7 @@ export function BankrollBar() {
     },
     {
       label: "Lost",
-      value: `-${formatUsd(lostUsd, { compact: true })}`,
+      value: formatUsd(-lostUsd, { compact: true }),
       sub: `${bankroll.losses} losing trades`,
       icon: TrendingDown,
       tone: "text-accent-red",

@@ -4,17 +4,22 @@ export function shortAddress(address: string, chars = 4): string {
   return `${address.slice(0, chars)}…${address.slice(-chars)}`;
 }
 
+/** A loss reads `-$47.53`: the sign goes before the `$`, and size is judged on the magnitude. */
 export function formatUsd(value: number, opts: { compact?: boolean } = {}): string {
   if (!Number.isFinite(value)) return "—";
-  if (opts.compact && value >= 1000) {
-    return `$${new Intl.NumberFormat("en-US", {
+  const sign = value < 0 ? "-" : "";
+  const abs = Math.abs(value);
+  if (opts.compact && abs >= 1000) {
+    return `${sign}$${new Intl.NumberFormat("en-US", {
       notation: "compact",
       maximumFractionDigits: 1,
-    }).format(value)}`;
+    }).format(abs)}`;
   }
-  return `$${new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: value < 1 ? 6 : 2,
-  }).format(value)}`;
+  const digits = new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: abs < 1 ? 6 : 2,
+  }).format(abs);
+  // A loss too small to show at 6 decimals is not a loss worth a minus sign.
+  return digits === "0" ? "$0" : `${sign}$${digits}`;
 }
 
 export function formatPriceUsd(value: number): string {
