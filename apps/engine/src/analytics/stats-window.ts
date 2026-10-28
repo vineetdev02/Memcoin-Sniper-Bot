@@ -5,7 +5,7 @@ import type {
   TradeHighlight,
   TradeStatsWindow,
 } from "@sniperbot/shared";
-import { env } from "../config/env.js";
+import { startingBalanceUsd } from "../config/trading-settings.js";
 import { childLogger } from "../utils/logger.js";
 import { getPrisma } from "../state/db.js";
 
@@ -100,10 +100,8 @@ export async function computeStatsWindow(windowKey: StatsWindowKey): Promise<Tra
   const avgLossPct =
     lossPcts.length > 0 ? lossPcts.reduce((s, x) => s + x, 0) / lossPcts.length : 0;
 
-  const roiPct =
-    env.PAPER_STARTING_BALANCE_USD > 0
-      ? (realizedPnlUsd / env.PAPER_STARTING_BALANCE_USD) * 100
-      : 0;
+  const startingUsd = startingBalanceUsd();
+  const roiPct = startingUsd > 0 ? (realizedPnlUsd / startingUsd) * 100 : 0;
 
   // === Breakdowns ===
   const byDex = bucketBy(closed, (p) => p.pool.source);

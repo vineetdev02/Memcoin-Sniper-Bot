@@ -1,6 +1,6 @@
 import type { ExitReason, Position } from "@sniperbot/shared";
 import { childLogger } from "../utils/logger.js";
-import { env } from "../config/env.js";
+import { tradingSettings } from "../config/trading-settings.js";
 import { paperExecutor, sellResultToTrade } from "../execution/paper-executor.js";
 import { liquidityAt, priceAt } from "../execution/price-simulator.js";
 import type { MarketFeed } from "../execution/market-price.js";
@@ -238,8 +238,42 @@ export class ExitEngine {
     }
     log.warn("kill switch: all positions closed");
   }
+
+  /**
+   * Sell every open position at the market as the engine stops, so a session
+   * ends flat instead of leaving tokens to die while nothing watches them. A
+   * token nobody quotes cannot be sold; it stays open for the next run, whose
+   * exits write it off the way they would have anyway.
+   */
+  sellAllOnShutdown(): { sold: number; unpriced: number } {
+    let sold = 0;
+    let unpriced = 0;
+    const now = Date.now();
+    for (const p of this.store.list()) {
+      const rec = this.store.get(p.id);
+      if (!rec) continue;
+      const m = this.marketFor(rec, (now - p.openedAt) * this.timeScale);
+      if (!m) {
+        unpriced++;
+        continue;
+      }
+      const updated = this.store.tickPrice(p.id, m.priceUsd) ?? p;
+      const sell = paperExecutor.sell(
+        updated.entryPriceUsd,
+        updated.currentPriceUsd,
+        updated.remainingTokens,
+        m.liquidityUsd,
+        "manual",
+      );
+      this.store.closeFully(p.id, sell.proceedsUsd, sellResultToTrade(p.id, sell), "manual");
+      this.fullCloses++;
+      sold++;
+    }
+    if (sold + unpriced > 0) log.warn({ sold, unpriced }, "engine stopping: open positions sold at the market");
+    return { sold, unpriced };
+  }
 }
 
 export function defaultStopLossPct(): number {
-  return env.STOP_LOSS_PCT;
+  return tradingSettings().stopLossPct;
 }

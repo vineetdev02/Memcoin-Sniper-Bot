@@ -45,6 +45,8 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     );
     socket.on("position:closed", ({ position }) => positionClosed(position));
     socket.on("bankroll:snapshot", setBankroll);
+    // the engine emptied the account: reload everything as on a fresh connect
+    socket.on("account:reset", onConnect);
 
     if (socket.connected) onConnect();
 
@@ -58,6 +60,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       socket.off("position:update");
       socket.off("position:closed");
       socket.off("bankroll:snapshot");
+      socket.off("account:reset", onConnect);
     };
   }, [
     addPool,

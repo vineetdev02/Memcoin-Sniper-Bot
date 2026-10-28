@@ -26,6 +26,7 @@ const NAV = [
   { href: "/analytics", label: "Analytics" },
   { href: "/filters", label: "Filters" },
   { href: "/backtest", label: "Backtest" },
+  { href: "/settings", label: "Settings" },
 ];
 
 // Every pill keeps to one line and its own width; what does not fit at a

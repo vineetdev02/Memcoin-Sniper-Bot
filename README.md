@@ -100,8 +100,8 @@ buy** and **when you sell**:
 ## How it works
 
 ```
- Helius logs (WebSocket)            ┌─────────────────────────────┐
- pump.fun · PumpSwap · Raydium ───▶ │ Pool detector               │  normalise every DEX to one PoolEvent
+ PumpPortal (free WebSocket)        ┌─────────────────────────────┐
+ pump.fun launches · migrations ──▶ │ Pool detector               │  normalise every DEX to one PoolEvent
                                     └──────────────┬──────────────┘
                                                    ▼
                                                    │ waits EVAL_DELAY_SEC (90s)
@@ -210,7 +210,8 @@ pnpm prisma:migrate                # create the tables
 **No Helius key yet?** Set `SYNTHETIC_FEED=true` in `.env`. The engine then generates realistic
 fake launches, rugs included, so the whole pipeline runs without any API key.
 
-**With a Helius key** (a free one is enough to start), put it in `HELIUS_API_KEY`.
+**With a Helius key** (a free one is enough to start), put it in `HELIUS_API_KEY`. New pools come
+from PumpPortal's free feed; Helius answers the filters' on-chain checks.
 
 Then run the engine and the dashboard in two terminals:
 
@@ -223,6 +224,9 @@ pnpm dev:dashboard    # http://localhost:3000
 not even connect to the RPC provider: no pools are detected, filtered or traded, and no Helius
 credits are spent. Every restart turns it off again. Pressing it off unsubscribes and stops new
 entries. Open positions keep their take-profits, stop-losses and rug watch, none of which use RPC.
+Stopping the engine (Ctrl+C) in paper mode sells whatever is still open at the market first, so a
+session never leaves tokens to die while nothing watches them; `SELL_ON_SHUTDOWN=false` keeps them
+open for the next run instead. A token nobody quotes any more cannot be sold and stays open.
 The **RPC** counter next to the button is every request the engine has sent since it started,
 which is roughly the credits spent. The Backtest page is the one other thing that spends them:
 each replayed pool runs the preset's filters against the RPC, even while the bot is off.
@@ -238,6 +242,7 @@ each replayed pool runs the preset's filters against the RPC, even while the bot
 | **Analytics** | win rate, profit factor, per-filter lift, results by DEX, liquidity and hour |
 | **Filters** | toggle and tune filters, save and activate presets |
 | **Backtest** | replay stored pools through any preset without touching live trading |
+| **Settings** | change sizing, exits, risk limits and the filter delay while it runs; start the paper account over at a new amount |
 
 ---
 
@@ -294,11 +299,18 @@ for a real one.
 
 ## Configuration
 
+Most trading settings can also be changed on the dashboard's **Settings** page. A value saved
+there overrides `.env` and survives restarts; the page shows the `.env` value next to anything
+changed. Exits are fixed when a position opens, so a new stop-loss or ladder applies to the next
+buy. **Reset paper account** on the same page starts over at a new amount: it needs the bot off,
+writes everything it deletes to `apps/engine/backups/` first, and keeps presets and settings.
+
 `.env.example` lists every setting with a working default. The ones you are most likely to change:
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `SYNTHETIC_FEED` | `false` | generate fake launches instead of reading Helius |
+| `SYNTHETIC_FEED` | `false` | generate fake launches instead of reading a real feed |
+| `POOL_FEED` | `pumpportal` | where new pools come from: `pumpportal` (free) or `helius` (see the FAQ) |
 | `PAPER_STARTING_BALANCE_USD` | `10000` | paper bankroll |
 | `POSITION_SIZE_PCT` | `1.0` | bankroll % per trade |
 | `MAX_CONCURRENT_POSITIONS` | `10` | open positions at once |
@@ -308,6 +320,7 @@ for a real one.
 | `FILTER_LIQUIDITY_MIN_USD` / `_MAX_USD` | `5000` / `500000` | liquidity window |
 | `EVAL_DELAY_SEC` | `90` | how long a new pool waits before it is judged |
 | `DAILY_DRAWDOWN_LIMIT_PCT` | `10` | daily loss that halts entries |
+| `SELL_ON_SHUTDOWN` | `true` | paper: sell open positions at the market when the engine stops |
 | `ENABLE_PUMPFUN`, `ENABLE_PUMPSWAP`, `ENABLE_RAYDIUM_AMM` | | which DEXes to watch |
 
 Every value is validated at startup, and the engine refuses to start with a clear message rather
@@ -332,7 +345,7 @@ than run on a typo.
 apps/
   engine/                 Node + TypeScript: the bot
     src/
-      feeds/              Helius log stream, per-DEX parsers, synthetic feed
+      feeds/              PumpPortal and Helius streams, per-DEX parsers, synthetic feed
       filters/            the twelve filters and the orchestrator
       execution/          paper executor, price simulator, trader
       exits/              exit engine (TP / SL / trailing / time), rug watcher
@@ -433,9 +446,10 @@ returns.
 <details>
 <summary><b>What do I need to pay for?</b></summary>
 
-Nothing, to try it. The synthetic feed needs no key at all. To watch real launches you need a
-Helius API key, and the free plan is enough to start. Helius is the only key the engine uses.
-Jupiter's quote API and DexScreener are called without one.
+Nothing, to try it. The synthetic feed needs no key at all. Real launches come from PumpPortal's
+free feed, which needs no key either. The filters' on-chain checks need an RPC: a free Helius key
+works, and without one they fall back to the public Solana RPC, which rate-limits hard. Helius is
+the only key the engine uses. Jupiter, RugCheck and DexScreener are called without one.
 
 </details>
 
@@ -445,6 +459,16 @@ Jupiter's quote API and DexScreener are called without one.
 None while the bot is off, which is how it starts every time. While it is on, the **RPC** counter
 in the dashboard header shows every request sent since startup. Running a backtest spends credits
 too, even with the bot off.
+
+Each pump.fun launch costs about 6 credits under the Safe Sniper preset (mint and freeze authority,
+top holders, early-buyer activity). Measured on 2026-10-28, pump.fun saw 8–19 launches a minute, so
+the free plan's 1M credits a month covers roughly 5–11 hours of running a day, not all day.
+Credits running out on the free plan stops the RPC calls; it does not bill you.
+
+`POOL_FEED=helius` is the older way to find pools: a log subscription to each enabled DEX program.
+It covers Raydium AMM as well, but those logs include every trade on the program, and since April
+2026 Helius bills WebSocket traffic at 2 credits per 0.1 MB, so it costs far more than the
+filters do.
 
 </details>
 

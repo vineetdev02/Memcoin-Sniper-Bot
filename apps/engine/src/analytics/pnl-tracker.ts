@@ -1,6 +1,7 @@
 import type { BankrollSnapshot, Position } from "@sniperbot/shared";
 import { childLogger } from "../utils/logger.js";
 import { env } from "../config/env.js";
+import { startingBalanceUsd } from "../config/trading-settings.js";
 import { getPrisma } from "../state/db.js";
 import type { PositionStore } from "../state/position-store.js";
 
@@ -8,7 +9,7 @@ const log = childLogger("pnl");
 
 export class PnlTracker {
   private readonly store: PositionStore;
-  private readonly startingBalance: number;
+  private startingBalance: number;
   private snapshotTimer: NodeJS.Timeout | null = null;
   private wins = 0;
   private losses = 0;
@@ -21,12 +22,25 @@ export class PnlTracker {
 
   constructor(store: PositionStore) {
     this.store = store;
-    this.startingBalance = env.PAPER_STARTING_BALANCE_USD;
+    this.startingBalance = startingBalanceUsd();
 
     store.on("position-opened", ({ position }) => {
       this.totalInvestedUsd += position.entrySizeUsd;
     });
     store.on("position-closed", ({ position }) => this.onClose(position));
+  }
+
+  /** A fresh paper account: a new bankroll and no trades behind it. */
+  reset(startingBalanceUsd: number): void {
+    this.startingBalance = startingBalanceUsd;
+    this.wins = 0;
+    this.losses = 0;
+    this.totalWinPct = 0;
+    this.totalLossPct = 0;
+    this.totalGrossWinUsd = 0;
+    this.totalGrossLossUsd = 0;
+    this.totalTrades = 0;
+    this.totalInvestedUsd = 0;
   }
 
   /** Positions closed and opened by earlier runs, so a restart keeps the history. */

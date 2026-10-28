@@ -106,3 +106,44 @@ describe("exits on market prices", () => {
     assert.ok((closed?.realizedPnlUsd ?? 0) <= -100, "written off at $0");
   });
 });
+
+describe("selling up when the engine stops", () => {
+  test("a priced position is sold at the market, an unpriced one is left for the next run", async () => {
+    const store = quietStore();
+    const prices = new Map<string, MarketQuote>([
+      ["MINT", { priceUsd: 1.2, liquidityUsd: 50_000, decimals: 6, at: Date.now() }],
+    ]);
+    const feed = new MarketFeed(() => ["MINT", "DEAD"], async () => prices);
+    const engine = new ExitEngine(store, 1, feed);
+    store.add(position(MIN), undefined, {} as Trade);
+    store.add({ ...position(MIN), id: "p2", poolAddress: "DEAD", tokenMint: "DEAD" }, undefined, {} as Trade);
+    await feed.poll();
+
+    assert.deepEqual(engine.sellAllOnShutdown(), { sold: 1, unpriced: 1 });
+
+    assert.deepEqual(store.list().map((p) => p.id), ["p2"]);
+    const sold = store.recentlyClosed(1)[0];
+    assert.equal(sold?.closeReason, "manual");
+    assert.equal(sold?.currentPriceUsd, 1.2, "at the price now, not the last tick's");
+    assert.ok((sold?.realizedPnlUsd ?? 0) > 0);
+  });
+
+  test("the store's writes can be waited for, so none is cut off by the database closing", async () => {
+    const store = new PositionStore();
+    const landed: string[] = [];
+    const slow = (what: string) => () => new Promise<void>((r) => setTimeout(() => (landed.push(what), r()), 20));
+    const s = store as unknown as Record<string, () => Promise<void>>;
+    s.persistOpen = slow("open");
+    s.persistClose = slow("close");
+    s.persistTrade = async () => {
+      throw new Error("db down");
+    };
+
+    store.add(position(MIN), undefined, {} as Trade);
+    store.applyPartialSell("p1", 25, 30, {} as Trade, 0);
+    store.closeFully("p1", 90, {} as Trade, "manual");
+    await store.flush();
+
+    assert.deepEqual(landed.sort(), ["close", "open"], "a failed write is logged, never awaited forever");
+  });
+});

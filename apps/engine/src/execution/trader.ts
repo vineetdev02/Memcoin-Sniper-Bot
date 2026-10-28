@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { OrchestratorVerdict, PoolEvent, Position } from "@sniperbot/shared";
 import { env } from "../config/env.js";
+import { tpLadder, tradingSettings } from "../config/trading-settings.js";
 import { childLogger } from "../utils/logger.js";
 import { buildTPLadder, PositionStore } from "../state/position-store.js";
 import { paperExecutor, buyResultToTrade, type EntryMarket } from "./paper-executor.js";
@@ -103,7 +104,8 @@ export class Trader {
       return;
     }
 
-    if (this.store.count() + this.pendingEntries >= env.MAX_CONCURRENT_POSITIONS) {
+    const settings = tradingSettings();
+    if (this.store.count() + this.pendingEntries >= settings.maxConcurrentPositions) {
       this.skippedFull++;
       return;
     }
@@ -113,21 +115,21 @@ export class Trader {
     while (this.recentEntries.length && now - this.recentEntries[0]! > 60_000) {
       this.recentEntries.shift();
     }
-    if (this.recentEntries.length >= env.MAX_POSITION_PER_MIN) {
+    if (this.recentEntries.length >= settings.maxPositionPerMin) {
       this.skippedRate++;
-      log.warn({ limit: env.MAX_POSITION_PER_MIN }, "rate limit: skipping snipe");
+      log.warn({ limit: settings.maxPositionPerMin }, "rate limit: skipping snipe");
       return;
     }
 
     const snap = this.pnl.buildSnapshot();
     const exposurePct = (snap.openExposureUsd / snap.balanceUsd) * 100;
-    if (exposurePct >= env.MAX_TOTAL_EXPOSURE_PCT) {
+    if (exposurePct >= settings.maxTotalExposurePct) {
       this.skippedExposure++;
       log.warn({ exposurePct: exposurePct.toFixed(1) }, "exposure cap: skipping snipe");
       return;
     }
 
-    const sizeUsd = snap.balanceUsd * (env.POSITION_SIZE_PCT / 100);
+    const sizeUsd = snap.balanceUsd * (settings.positionSizePct / 100);
 
     // Hold the slot while the price is fetched, so concurrent snipes cannot
     // all slip through the checks above; give it back if nothing opens.
@@ -179,6 +181,8 @@ export class Trader {
 
     const tokenSymbol = (pool.rawEvent as { name?: string } | undefined)?.name;
     const positionId = randomUUID();
+    // Exits are fixed at the buy: a settings change applies to positions opened after it.
+    const exits = tradingSettings();
     const position: Position = {
       id: positionId,
       poolAddress: pool.poolAddress,
@@ -196,12 +200,12 @@ export class Trader {
       realizedPnlUsd: 0,
       peakPriceUsd: result.effectivePriceUsd,
       peakGainPct: 0,
-      tpLadder: buildTPLadder(env.TP_LADDER),
-      stopLossPct: env.STOP_LOSS_PCT,
-      trailingStopPct: env.TRAILING_STOP_PCT,
-      trailingStopActivationPct: env.TRAILING_STOP_ACTIVATION_PCT,
+      tpLadder: buildTPLadder(tpLadder()),
+      stopLossPct: exits.stopLossPct,
+      trailingStopPct: exits.trailingStopPct,
+      trailingStopActivationPct: exits.trailingStopActivationPct,
       trailingStopArmed: false,
-      timeExitMin: env.TIME_EXIT_MIN,
+      timeExitMin: exits.timeExitMin,
       filterScore: verdict.totalScore,
       openedAt: result.fillTime,
       status: "open",

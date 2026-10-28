@@ -63,6 +63,8 @@ coverage/
 .stylelintcache
 tmp/
 temp/
+# what a safe reset from the dashboard saved before deleting
+backups/
 .DS_Store
 Thumbs.db
 

@@ -42,6 +42,16 @@ export async function parsePumpFunCreate(
     return null;
   }
 
+  return pumpFunLaunch(tokenMint, creator, signature, detectedAt);
+}
+
+/** A new pump.fun launch, priced off the curve's starting reserves. Shared with the PumpPortal feed. */
+export function pumpFunLaunch(
+  tokenMint: string,
+  creatorWallet: string,
+  signature: string,
+  detectedAt: number,
+): PoolEvent {
   const initialPriceSol = PUMPFUN_VIRTUAL_SOL_RESERVES / PUMPFUN_VIRTUAL_TOKEN_RESERVES;
   const initialPriceUsd = initialPriceSol * SOL_PRICE_USD_FALLBACK;
   const initialLiquidityUsd = PUMPFUN_VIRTUAL_SOL_RESERVES * SOL_PRICE_USD_FALLBACK;
@@ -53,7 +63,7 @@ export async function parsePumpFunCreate(
     source: "pumpfun",
     initialLiquidityUsd,
     initialPriceUsd,
-    creatorWallet: creator,
+    creatorWallet,
     detectedAt,
     signature,
   };

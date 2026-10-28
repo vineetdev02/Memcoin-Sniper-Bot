@@ -202,3 +202,11 @@ model BankrollSnapshot {
 
   @@index([mode, takenAt])
 }
+
+// Settings changed from the dashboard. Each row overrides the .env value it
+// names, and survives restarts; a safe reset leaves this table alone.
+model AppSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}

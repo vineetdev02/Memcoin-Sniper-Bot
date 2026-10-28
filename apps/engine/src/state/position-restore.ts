@@ -1,5 +1,6 @@
 import type { DexSource, ExitReason, Position, PoolEvent, TPLevel, Trade } from "@sniperbot/shared";
 import { env } from "../config/env.js";
+import { tradingSettings } from "../config/trading-settings.js";
 import { childLogger } from "../utils/logger.js";
 import { buildProfile } from "../execution/price-simulator.js";
 import { getPrisma } from "./db.js";
@@ -149,9 +150,9 @@ export async function restorePositions(store: PositionStore, pnl: PnlTracker): P
   ]);
 
   const settings: ExitSettings = {
-    trailingStopPct: env.TRAILING_STOP_PCT,
-    trailingStopActivationPct: env.TRAILING_STOP_ACTIVATION_PCT,
-    timeExitMin: env.TIME_EXIT_MIN,
+    trailingStopPct: tradingSettings().trailingStopPct,
+    trailingStopActivationPct: tradingSettings().trailingStopActivationPct,
+    timeExitMin: tradingSettings().timeExitMin,
   };
   const records: PositionRecord[] = open.map((row) => {
     const { position, trades } = rebuildPosition(row as OpenPositionRow, settings);

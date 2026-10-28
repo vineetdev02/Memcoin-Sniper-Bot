@@ -12,6 +12,8 @@ import type {
   PositionClosedEvent,
   PositionOpenedEvent,
   PositionUpdateEvent,
+  ResetResult,
+  SettingsSnapshot,
   StatsWindowKey,
   TradeStatsWindow,
 } from "@sniperbot/shared";
@@ -37,6 +39,8 @@ import {
   savePreset,
 } from "../state/filter-presets.js";
 import { filterConfig } from "../config/filter-config.js";
+import { saveTradingSettings, settingsSnapshot } from "../config/trading-settings.js";
+import type { PaperAccount } from "../state/paper-reset.js";
 
 const log = childLogger("socket-server");
 
@@ -49,6 +53,8 @@ export interface ServerToClientEvents {
   "position:closed": (e: PositionClosedEvent) => void;
   "bankroll:snapshot": (snap: BankrollSnapshot) => void;
   "preset:changed": (preset: { activeName: string | null }) => void;
+  "settings:changed": (snapshot: SettingsSnapshot) => void;
+  "account:reset": (result: ResetResult) => void;
 }
 
 export interface ClientToServerEvents {
@@ -84,6 +90,15 @@ export interface ClientToServerEvents {
     ack: (result: { ok: boolean; summary?: BacktestSummary; error?: string }) => void,
   ) => void;
   "bot:set": (on: boolean, ack: (result: { ok: boolean; botOn: boolean; error?: string }) => void) => void;
+  "settings:get": (ack: (snapshot: SettingsSnapshot) => void) => void;
+  "settings:save": (
+    patch: unknown,
+    ack: (result: { ok: boolean; snapshot?: SettingsSnapshot; error?: string }) => void,
+  ) => void;
+  "account:reset": (
+    payload: { startingBalanceUsd: number },
+    ack: (result: { ok: boolean; result?: ResetResult; error?: string }) => void,
+  ) => void;
 }
 
 export interface SystemStatus {
@@ -127,6 +142,7 @@ export class SocketServer {
   private readonly pnl: PnlTracker;
   private readonly circuit: DrawdownCircuit;
   private readonly bot: BotSwitch;
+  private readonly account: PaperAccount;
   private readonly startedAt = Date.now();
   private statusInterval: NodeJS.Timeout | null = null;
 
@@ -137,6 +153,7 @@ export class SocketServer {
     pnl: PnlTracker,
     circuit: DrawdownCircuit,
     bot: BotSwitch,
+    account: PaperAccount,
   ) {
     this.detector = detector;
     this.orchestrator = orchestrator;
@@ -144,6 +161,7 @@ export class SocketServer {
     this.pnl = pnl;
     this.circuit = circuit;
     this.bot = bot;
+    this.account = account;
 
     this.http = createServer((req, res) => {
       if (req.url === "/health") {
@@ -273,6 +291,10 @@ export class SocketServer {
           reply({ ok: false, botOn: this.bot.isOn(), error: "expected true or false" });
           return;
         }
+        if (on && this.account.isResetting()) {
+          reply({ ok: false, botOn: false, error: "a reset is running — try again in a moment" });
+          return;
+        }
         try {
           await this.bot.set(on);
           reply({ ok: true, botOn: this.bot.isOn() });
@@ -282,6 +304,36 @@ export class SocketServer {
         }
         // every open dashboard flips at once, not on the next 2s tick
         this.io.emit("system:status", this.buildStatus());
+      });
+
+      socket.on("settings:get", (ack) => {
+        if (typeof ack === "function") ack(settingsSnapshot());
+      });
+
+      socket.on("settings:save", async (patch, ack) => {
+        const reply = typeof ack === "function" ? ack : () => undefined;
+        try {
+          const snapshot = await saveTradingSettings(patch);
+          reply({ ok: true, snapshot });
+          this.io.emit("settings:changed", snapshot);
+        } catch (err) {
+          reply({ ok: false, error: (err as Error).message });
+        }
+      });
+
+      socket.on("account:reset", async (payload, ack) => {
+        const reply = typeof ack === "function" ? ack : () => undefined;
+        try {
+          const result = await this.account.reset(payload?.startingBalanceUsd);
+          reply({ ok: true, result });
+          this.io.emit("account:reset", result);
+          this.io.emit("settings:changed", settingsSnapshot());
+          this.io.emit("system:status", this.buildStatus());
+          this.io.emit("bankroll:snapshot", this.pnl.buildSnapshot());
+        } catch (err) {
+          log.error({ err }, "paper reset failed");
+          reply({ ok: false, error: (err as Error).message });
+        }
       });
 
       socket.on("disconnect", (reason) => {

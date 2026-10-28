@@ -3,6 +3,7 @@ import { logger } from "./utils/logger.js";
 import { closeRedis, pingRedis } from "./state/redis.js";
 import { disconnectPrisma, getPrisma } from "./state/db.js";
 import { HeliusLogStream } from "./feeds/helius-ws.js";
+import { PumpPortalStream } from "./feeds/pumpportal-ws.js";
 import { PoolDetector } from "./feeds/pool-detector.js";
 import { SyntheticFeed } from "./feeds/synthetic-feed.js";
 import { SocketServer } from "./api/socket-server.js";
@@ -20,6 +21,8 @@ import { ExitEngine } from "./exits/exit-engine.js";
 import { RugWatcher } from "./exits/rug-watcher.js";
 import { DrawdownCircuit } from "./risk/drawdown-circuit.js";
 import { bootstrapPresets } from "./state/filter-presets.js";
+import { loadSettings, startingBalanceUsd, tradingSettings } from "./config/trading-settings.js";
+import { PaperAccount } from "./state/paper-reset.js";
 import { createAlerter } from "./alerts/index.js";
 
 async function main() {
@@ -29,6 +32,7 @@ async function main() {
       logLevel: env.LOG_LEVEL,
       nodeEnv: env.NODE_ENV,
       syntheticFeed: env.SYNTHETIC_FEED,
+      poolFeed: env.POOL_FEED,
       enabledDexes: {
         pumpfun: env.ENABLE_PUMPFUN,
         pumpswap: env.ENABLE_PUMPSWAP,
@@ -43,10 +47,7 @@ async function main() {
   );
 
   if (isPaperMode) {
-    logger.info(
-      { startingBalanceUsd: env.PAPER_STARTING_BALANCE_USD },
-      "PAPER MODE — no real funds at risk",
-    );
+    logger.info("PAPER MODE — no real funds at risk");
   } else {
     logger.warn(
       { liveMaxBankrollUsd: env.LIVE_MAX_BANKROLL_USD },
@@ -75,10 +76,17 @@ async function main() {
 
   // === Phase 4: filter presets / runtime config ===
   await bootstrapPresets();
+  // Before anything reads them: the bankroll and the trader start from these.
+  await loadSettings();
 
   // === Pool detection pipeline ===
-  const stream = new HeliusLogStream();
+  const stream = env.POOL_FEED === "helius" ? new HeliusLogStream() : new PumpPortalStream();
   const detector = new PoolDetector(stream);
+  if (stream instanceof PumpPortalStream) {
+    stream.on("pool", (event) => {
+      detector.ingest(event).catch((err) => logger.error({ err }, "PumpPortal ingest failed"));
+    });
+  }
   const orchestrator = new FilterOrchestrator();
 
   // === Phase 3: paper trading ===
@@ -114,7 +122,7 @@ async function main() {
       trader.cachePool(event);
       void orchestrator.evaluate(event);
     };
-    const delayMs = isSyntheticPool(event) ? 0 : env.EVAL_DELAY_SEC * 1000;
+    const delayMs = isSyntheticPool(event) ? 0 : tradingSettings().evalDelaySec * 1000;
     if (delayMs === 0) judge();
     else setTimeout(judge, delayMs).unref();
   });
@@ -136,7 +144,9 @@ async function main() {
     const urlNeedsKey = env.HELIUS_RPC_URL.endsWith("=");
     if (urlNeedsKey && !env.HELIUS_API_KEY) {
       logger.warn(
-        "RPC URL needs an api-key suffix but HELIUS_API_KEY is empty — pool detection will produce no events.",
+        env.POOL_FEED === "helius"
+          ? "RPC URL needs an api-key suffix but HELIUS_API_KEY is empty — pool detection will produce no events."
+          : "HELIUS_API_KEY is empty — filters will use the public Solana RPC, which rate-limits hard.",
       );
     }
   }
@@ -152,9 +162,10 @@ async function main() {
   // Nothing subscribes to the RPC provider until the dashboard turns this on.
   const bot = new BotSwitch({
     feed: {
+      // Synthetic launches replace the real feed rather than mix with it.
       start: async () => {
-        await stream.start();
-        synthetic?.start();
+        if (synthetic) synthetic.start();
+        else await stream.start();
       },
       stop: async () => {
         synthetic?.stop();
@@ -167,7 +178,16 @@ async function main() {
     trader,
   });
 
-  const socketServer = new SocketServer(detector, orchestrator, positionStore, pnl, circuit, bot);
+  const account = new PaperAccount({
+    bot,
+    store: positionStore,
+    pnl,
+    circuit,
+    counters: [orchestrator, detector],
+    timers: [exitEngine, rugWatcher, { start: () => pnl.start(60_000), stop: () => pnl.stop() }],
+  });
+
+  const socketServer = new SocketServer(detector, orchestrator, positionStore, pnl, circuit, bot, account);
   await socketServer.start();
 
   logger.info(
@@ -176,10 +196,11 @@ async function main() {
       syntheticConfigured: !!synthetic,
       socketPort: env.ENGINE_HTTP_PORT,
       filterCount: orchestrator.getStats().filters,
-      tpLadder: env.TP_LADDER,
-      stopLossPct: env.STOP_LOSS_PCT,
-      maxConcurrent: env.MAX_CONCURRENT_POSITIONS,
-      positionSizePct: env.POSITION_SIZE_PCT,
+      startingBalanceUsd: startingBalanceUsd(),
+      tpLadder: tradingSettings().tpLadder,
+      stopLossPct: tradingSettings().stopLossPct,
+      maxConcurrent: tradingSettings().maxConcurrentPositions,
+      positionSizePct: tradingSettings().positionSizePct,
     },
     "Phase 3 pipeline live (paper trading)",
   );
@@ -229,17 +250,26 @@ async function main() {
   }, 30_000);
 
   await new Promise<void>((resolve) => {
+    let stopping = false;
     const shutdown = async (signal: string) => {
+      // Ctrl+C arrives more than once: from the terminal and again relayed by pnpm and the watcher.
+      // `dev` runs `node --watch`, not `tsx watch`, because tsx answers the repeat with SIGKILL ~30ms in.
+      if (stopping) return;
+      stopping = true;
       logger.info({ signal }, "Shutdown");
       setTimeout(() => {
         logger.error("shutdown did not finish in 15s; forcing exit");
         exit(1);
       }, 15_000).unref();
       clearInterval(statsTimer);
+      // First, while the last prices are fresh.
+      trader.setEnabled(false);
+      exitEngine.stop();
+      if (isPaperMode && env.SELL_ON_SHUTDOWN) exitEngine.sellAllOnShutdown();
+      await positionStore.flush();
       await alerter?.stop(signal);
       synthetic?.stop();
       rugWatcher.stop();
-      exitEngine.stop();
       market.stop();
       circuit.stop();
       pnl.stop();
@@ -249,8 +279,8 @@ async function main() {
       await closeRedis();
       resolve();
     };
-    process.once("SIGINT", () => void shutdown("SIGINT"));
-    process.once("SIGTERM", () => void shutdown("SIGTERM"));
+    process.on("SIGINT", () => void shutdown("SIGINT"));
+    process.on("SIGTERM", () => void shutdown("SIGTERM"));
   });
 
   logger.info("Goodbye.");

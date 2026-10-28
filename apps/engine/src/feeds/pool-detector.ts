@@ -3,12 +3,21 @@ import PQueue from "p-queue";
 import type { Connection } from "@solana/web3.js";
 import type { PoolEvent, DexSource } from "@sniperbot/shared";
 import { childLogger } from "../utils/logger.js";
-import { HeliusLogStream, type RawLogEvent } from "./helius-ws.js";
+import type { RawLogEvent } from "./helius-ws.js";
 import { getParser } from "./parsers/index.js";
 import { publishPoolEvent } from "../state/pool-stream.js";
 import { getPrisma } from "../state/db.js";
 
 const log = childLogger("pool-detector");
+
+/** A creation transaction still to be fetched and parsed. */
+export type PendingCreation = Pick<RawLogEvent, "signature" | "source" | "receivedAt">;
+
+/** Helius's log stream, or PumpPortal's migrations: transactions to parse, and the RPC to fetch them from. */
+export interface CreationFeed {
+  on(event: "log", listener: (raw: PendingCreation) => void): unknown;
+  getConnection(): Connection | null;
+}
 
 interface PoolDetectorEvents {
   pool: (event: PoolEvent) => void;
@@ -33,19 +42,19 @@ const dexSourceToPrisma: Record<DexSource, string> = {
 };
 
 export class PoolDetector extends EventEmitter {
-  private readonly stream: HeliusLogStream;
+  private readonly stream: CreationFeed;
   private readonly queue = new PQueue({ concurrency: 5, intervalCap: 20, interval: 1000 });
   private parsedCount = 0;
   private skippedCount = 0;
 
-  constructor(stream: HeliusLogStream) {
+  constructor(stream: CreationFeed) {
     super();
     this.stream = stream;
     this.stream.on("log", (raw) => this.handleRawLog(raw));
   }
 
   /**
-   * Inject a pre-parsed pool event (used by the synthetic feed in dev/testing).
+   * Inject a pre-parsed pool event (the synthetic feed, and PumpPortal launches).
    */
   async ingest(event: PoolEvent): Promise<void> {
     await this.persistAndPublish(event);
@@ -59,18 +68,23 @@ export class PoolDetector extends EventEmitter {
     };
   }
 
+  resetStats(): void {
+    this.parsedCount = 0;
+    this.skippedCount = 0;
+  }
+
   /** Drop logs still waiting to be parsed — each parse is an RPC call. */
   clearPending(): void {
     this.queue.clear();
   }
 
-  private handleRawLog(raw: RawLogEvent): void {
+  private handleRawLog(raw: PendingCreation): void {
     const conn = this.stream.getConnection();
     if (!conn) return;
     void this.queue.add(() => this.processLog(raw, conn));
   }
 
-  private async processLog(raw: RawLogEvent, conn: Connection): Promise<void> {
+  private async processLog(raw: PendingCreation, conn: Connection): Promise<void> {
     const parser = getParser(raw.source);
     if (!parser) {
       this.skippedCount++;

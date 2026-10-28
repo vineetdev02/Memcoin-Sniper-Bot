@@ -64,6 +64,11 @@ export class FilterOrchestrator extends EventEmitter {
     };
   }
 
+  resetStats(): void {
+    this.snipes = 0;
+    this.rejects = 0;
+  }
+
   setLive(on: boolean): void {
     this.live = on;
   }

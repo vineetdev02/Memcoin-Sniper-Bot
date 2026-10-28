@@ -30,6 +30,11 @@ const envSchema = z.object({
   JITO_BLOCK_ENGINE_URL: z.string().url(),
   PUBLIC_SOLANA_RPC: z.string().url().default("https://api.mainnet-beta.solana.com"),
   RPC_MAX_RPS: z.coerce.number().int().positive().default(8),
+  // Where new pools come from. "pumpportal" is free and sends only launches and
+  // migrations. "helius" streams every log of every enabled DEX program, trades
+  // included, and Helius bills WebSocket traffic by the megabyte.
+  POOL_FEED: z.enum(["pumpportal", "helius"]).default("pumpportal"),
+  PUMPPORTAL_WS_URL: z.string().startsWith("wss://").default("wss://pumpportal.fun/api/data"),
   // quote-api.jup.ag/v6 no longer answers; lite-api is the keyless successor
   JUPITER_QUOTE_API: z.string().url().default("https://lite-api.jup.ag/swap/v1"),
   // prices for paper trades: entries, exits and the rug watch
@@ -65,6 +70,8 @@ const envSchema = z.object({
   TRAILING_STOP_PCT: z.coerce.number().positive(),
   TRAILING_STOP_ACTIVATION_PCT: z.coerce.number().positive(),
   TIME_EXIT_MIN: z.coerce.number().positive(),
+  // paper only: sell what is still open when the engine stops, instead of holding it until the next run
+  SELL_ON_SHUTDOWN: boolFromString.default(true),
   RUG_DETECTION_LP_DROP_PCT: z.coerce.number().positive().max(100),
 
   // Risk

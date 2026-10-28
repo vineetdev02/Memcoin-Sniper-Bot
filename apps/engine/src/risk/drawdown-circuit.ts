@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import type { Position } from "@sniperbot/shared";
-import { env } from "../config/env.js";
+import { tradingSettings } from "../config/trading-settings.js";
 import { childLogger } from "../utils/logger.js";
 import type { PositionStore } from "../state/position-store.js";
 import type { PnlTracker } from "../analytics/pnl-tracker.js";
@@ -67,9 +67,9 @@ export class DrawdownCircuit extends EventEmitter {
     this.store.on("position-closed", ({ position }) => this.onClose(position));
     log.info(
       {
-        dailyLimitPct: env.DAILY_DRAWDOWN_LIMIT_PCT,
-        weeklyLimitPct: env.WEEKLY_DRAWDOWN_LIMIT_PCT,
-        consecutiveLossLimit: env.HALT_ON_CONSECUTIVE_LOSSES,
+        dailyLimitPct: tradingSettings().dailyDrawdownLimitPct,
+        weeklyLimitPct: tradingSettings().weeklyDrawdownLimitPct,
+        consecutiveLossLimit: tradingSettings().haltOnConsecutiveLosses,
       },
       "drawdown circuit armed",
     );
@@ -80,6 +80,13 @@ export class DrawdownCircuit extends EventEmitter {
       clearTimeout(this.clearTimer);
       this.clearTimer = null;
     }
+  }
+
+  /** A fresh paper account: no losses on record, no halt. */
+  reset(): void {
+    this.history.length = 0;
+    this.consecutiveLosses = 0;
+    this.clearHalt();
   }
 
   /** Public gate. Called by Trader before opening a position. */
@@ -129,36 +136,37 @@ export class DrawdownCircuit extends EventEmitter {
     const bankroll = this.pnl.buildSnapshot().balanceUsd;
     if (bankroll <= 0) return;
 
-    if (this.consecutiveLosses >= env.HALT_ON_CONSECUTIVE_LOSSES) {
+    const limits = tradingSettings();
+    if (this.consecutiveLosses >= limits.haltOnConsecutiveLosses) {
       this.engageHalt({
         reason: "consecutive-losses",
         triggeredAt: Date.now(),
         untilTs: Date.now() + CONSECUTIVE_HALT_MS,
-        detail: `${this.consecutiveLosses} consecutive losses (limit ${env.HALT_ON_CONSECUTIVE_LOSSES})`,
+        detail: `${this.consecutiveLosses} consecutive losses (limit ${limits.haltOnConsecutiveLosses})`,
       });
       return;
     }
 
     const dailyLossUsd = this.windowLossUsd(DAY_MS);
     const dailyLossPct = (dailyLossUsd / bankroll) * 100;
-    if (dailyLossPct >= env.DAILY_DRAWDOWN_LIMIT_PCT) {
+    if (dailyLossPct >= limits.dailyDrawdownLimitPct) {
       this.engageHalt({
         reason: "daily-drawdown",
         triggeredAt: Date.now(),
         untilTs: Date.now() + DAILY_HALT_MS,
-        detail: `24h loss $${dailyLossUsd.toFixed(2)} = ${dailyLossPct.toFixed(1)}% (limit ${env.DAILY_DRAWDOWN_LIMIT_PCT}%)`,
+        detail: `24h loss $${dailyLossUsd.toFixed(2)} = ${dailyLossPct.toFixed(1)}% (limit ${limits.dailyDrawdownLimitPct}%)`,
       });
       return;
     }
 
     const weeklyLossUsd = this.windowLossUsd(WEEK_MS);
     const weeklyLossPct = (weeklyLossUsd / bankroll) * 100;
-    if (weeklyLossPct >= env.WEEKLY_DRAWDOWN_LIMIT_PCT) {
+    if (weeklyLossPct >= limits.weeklyDrawdownLimitPct) {
       this.engageHalt({
         reason: "weekly-drawdown",
         triggeredAt: Date.now(),
         untilTs: Date.now() + WEEKLY_HALT_MS,
-        detail: `7d loss $${weeklyLossUsd.toFixed(2)} = ${weeklyLossPct.toFixed(1)}% (limit ${env.WEEKLY_DRAWDOWN_LIMIT_PCT}%)`,
+        detail: `7d loss $${weeklyLossUsd.toFixed(2)} = ${weeklyLossPct.toFixed(1)}% (limit ${limits.weeklyDrawdownLimitPct}%)`,
       });
     }
   }

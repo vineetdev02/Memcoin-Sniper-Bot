@@ -46,6 +46,8 @@ export class PositionStore extends EventEmitter {
   private wins = 0;
   private losses = 0;
   private closedRecent: Position[] = [];
+  // database writes still in flight, so a stopping engine can wait for them
+  private readonly writes = new Set<Promise<void>>();
 
   /**
    * Take back positions a previous run left open, as they were: no persist,
@@ -56,6 +58,17 @@ export class PositionStore extends EventEmitter {
       if (this.open.has(rec.position.id)) continue;
       this.open.set(rec.position.id, rec);
     }
+  }
+
+  /** A fresh paper account. Nothing is persisted or emitted: the rows are deleted by the reset. */
+  reset(): void {
+    this.open.clear();
+    this.totalRealizedPnlUsd = 0;
+    this.totalEntryCostUsd = 0;
+    this.totalProceedsUsd = 0;
+    this.wins = 0;
+    this.losses = 0;
+    this.closedRecent = [];
   }
 
   /** Totals from positions closed in earlier runs, so a restart keeps the bankroll. */
@@ -73,9 +86,7 @@ export class PositionStore extends EventEmitter {
     this.open.set(position.id, { position, profile, trades: [openTrade] });
     this.totalEntryCostUsd += position.entrySizeUsd;
     this.emit("position-opened", { type: "position-opened", position });
-    void this.persistOpen(position, openTrade).catch((err) =>
-      log.warn({ err, id: position.id }, "open persist failed"),
-    );
+    this.track(this.persistOpen(position, openTrade), "open", position.id);
     log.info(
       {
         id: position.id.slice(0, 8),
@@ -172,9 +183,7 @@ export class PositionStore extends EventEmitter {
       tp.hit = true;
       tp.hitAt = Date.now();
     }
-    void this.persistTrade(p.id, sellTrade).catch((err) =>
-      log.warn({ err, id }, "trade persist failed"),
-    );
+    this.track(this.persistTrade(p.id, sellTrade), "trade", id);
     return p;
   }
 
@@ -214,9 +223,7 @@ export class PositionStore extends EventEmitter {
 
     this.emit("position-closed", { type: "position-closed", position: p });
 
-    void this.persistClose(p, sellTrade).catch((err) =>
-      log.warn({ err, id }, "close persist failed"),
-    );
+    this.track(this.persistClose(p, sellTrade), "close", id);
 
     log.info(
       {
@@ -253,6 +260,18 @@ export class PositionStore extends EventEmitter {
   }
 
   // === Persistence ===
+
+  /** Resolves once every write started so far has landed (or failed and been logged). */
+  async flush(): Promise<void> {
+    await Promise.all(this.writes);
+  }
+
+  private track(write: Promise<void>, what: string, id: string): void {
+    const tracked: Promise<void> = write
+      .catch((err) => log.warn({ err, id }, `${what} persist failed`))
+      .finally(() => this.writes.delete(tracked));
+    this.writes.add(tracked);
+  }
 
   private async persistOpen(p: Position, buyTrade: Trade): Promise<void> {
     const prisma = getPrisma();

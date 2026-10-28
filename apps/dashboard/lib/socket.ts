@@ -13,6 +13,8 @@ import type {
   PositionClosedEvent,
   PositionOpenedEvent,
   PositionUpdateEvent,
+  ResetResult,
+  SettingsSnapshot,
   StatsWindowKey,
   TradeStatsWindow,
 } from "@sniperbot/shared";
@@ -46,6 +48,8 @@ export interface ServerToClientEvents {
   "position:closed": (e: PositionClosedEvent) => void;
   "bankroll:snapshot": (snap: BankrollSnapshot) => void;
   "preset:changed": (msg: { activeName: string | null }) => void;
+  "settings:changed": (snapshot: SettingsSnapshot) => void;
+  "account:reset": (result: ResetResult) => void;
 }
 
 export interface ClientToServerEvents {
@@ -84,6 +88,15 @@ export interface ClientToServerEvents {
     ack: (result: { ok: boolean; summary?: BacktestSummary; error?: string }) => void,
   ) => void;
   "bot:set": (on: boolean, ack: (result: { ok: boolean; botOn: boolean; error?: string }) => void) => void;
+  "settings:get": (ack: (snapshot: SettingsSnapshot) => void) => void;
+  "settings:save": (
+    patch: Partial<SettingsSnapshot["settings"]>,
+    ack: (result: { ok: boolean; snapshot?: SettingsSnapshot; error?: string }) => void,
+  ) => void;
+  "account:reset": (
+    payload: { startingBalanceUsd: number },
+    ack: (result: { ok: boolean; result?: ResetResult; error?: string }) => void,
+  ) => void;
 }
 
 export type SniperSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
