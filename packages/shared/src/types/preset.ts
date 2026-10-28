@@ -109,6 +109,7 @@ export const BUILT_IN_PRESETS: ReadonlyArray<{
         "insider-detection": false,
         "social-signal": false,
         "volume-velocity": false,
+        "curve-demand": false,
         "anti-sniper-war": false,
       },
       thresholds: {

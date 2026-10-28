@@ -10,6 +10,7 @@ import { bundledLaunchFilter } from "./bundled-launch.js";
 import { insiderDetectionFilter } from "./insider-detection.js";
 import { antiSniperWarFilter } from "./anti-sniper-war.js";
 import { volumeVelocityFilter } from "./volume-velocity.js";
+import { curveDemandFilter } from "./curve-demand.js";
 import { socialSignalFilter } from "./social-signal.js";
 
 export const allFilters: Filter[] = [
@@ -24,6 +25,7 @@ export const allFilters: Filter[] = [
   insiderDetectionFilter,
   antiSniperWarFilter,
   volumeVelocityFilter,
+  curveDemandFilter,
   socialSignalFilter,
 ];
 

@@ -38,6 +38,8 @@ export interface SyntheticMock {
   socialScore: number;
   earlyTxCount: number;
   buySellRatio: number;
+  /** SOL held in the bonding curve at evaluation; absent from events generated before it existed */
+  curveSolIn?: number;
 }
 
 export interface Filter {

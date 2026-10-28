@@ -71,6 +71,7 @@ function generateMock(bucket: Bucket): SyntheticMock {
         socialScore: Math.floor(rand(60, 95)),
         earlyTxCount: Math.floor(rand(0, 5)),
         buySellRatio: rand(1.5, 3.5),
+        curveSolIn: rand(3, 20),
       };
     case "SOLID":
       return {
@@ -88,6 +89,7 @@ function generateMock(bucket: Bucket): SyntheticMock {
         socialScore: Math.floor(rand(40, 75)),
         earlyTxCount: Math.floor(rand(0, 8)),
         buySellRatio: rand(1.0, 2.5),
+        curveSolIn: rand(1, 12),
       };
     case "MIXED":
       return {
@@ -105,6 +107,7 @@ function generateMock(bucket: Bucket): SyntheticMock {
         socialScore: Math.floor(rand(20, 60)),
         earlyTxCount: Math.floor(rand(3, 18)),
         buySellRatio: rand(0.6, 1.8),
+        curveSolIn: rand(0, 6),
       };
     case "SKETCHY":
       return {
@@ -122,6 +125,7 @@ function generateMock(bucket: Bucket): SyntheticMock {
         socialScore: Math.floor(rand(0, 35)),
         earlyTxCount: Math.floor(rand(8, 25)),
         buySellRatio: rand(0.3, 1.3),
+        curveSolIn: rand(0, 3),
       };
     case "RUG":
       return {
@@ -139,6 +143,7 @@ function generateMock(bucket: Bucket): SyntheticMock {
         socialScore: Math.floor(rand(0, 20)),
         earlyTxCount: Math.floor(rand(15, 50)),
         buySellRatio: rand(0.1, 0.9),
+        curveSolIn: rand(0, 2),
       };
   }
 }
