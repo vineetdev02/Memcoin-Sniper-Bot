@@ -98,6 +98,36 @@ export function SettingsView() {
     setDraft({ ...draft, [key]: value });
     setMessage(null);
   };
+
+  const canSave = dirty && check.ok && !saving && connected;
+  const saveButtons = (
+    <div className="flex items-center gap-2">
+      {dirty && (
+        <button
+          onClick={() => {
+            setDraft(toDraft(snap.settings));
+            setMessage(null);
+          }}
+          className="rounded border border-border px-3 py-2 text-sm text-fg-muted hover:text-fg"
+        >
+          Discard
+        </button>
+      )}
+      <button
+        onClick={save}
+        disabled={!canSave}
+        className={`flex items-center gap-1.5 rounded border px-4 py-2 text-sm font-medium transition-colors ${
+          canSave
+            ? "border-accent-blue bg-accent-blue text-white shadow-sm hover:brightness-110"
+            : "cursor-not-allowed border-border bg-bg-elevated/40 text-fg-subtle"
+        }`}
+      >
+        <Save className="h-3.5 w-3.5" />
+        {saving ? "Saving…" : "Save changes"}
+      </button>
+    </div>
+  );
+  const changeCount = Object.keys(pending).length;
   const balanceUsd = bankroll?.balanceUsd ?? snap.startingBalanceUsd;
   const sizePct = Number(draft.positionSizePct);
 
@@ -131,27 +161,7 @@ export function SettingsView() {
             Saved here, they override .env and survive restarts. Each one shows its .env value when it differs.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {dirty && (
-            <button
-              onClick={() => {
-                setDraft(toDraft(snap.settings));
-                setMessage(null);
-              }}
-              className="rounded border border-border px-3 py-2 text-sm text-fg-muted hover:text-fg"
-            >
-              Discard
-            </button>
-          )}
-          <button
-            onClick={save}
-            disabled={!dirty || !check.ok || saving || !connected}
-            className="flex items-center gap-1.5 rounded bg-accent-blue/20 border border-accent-blue/30 text-accent-blue px-4 py-2 text-sm font-medium hover:bg-accent-blue/30 disabled:opacity-50"
-          >
-            <Save className="h-3.5 w-3.5" />
-            {saving ? "Saving…" : "Save changes"}
-          </button>
-        </div>
+        {saveButtons}
       </div>
 
       {(message || (dirty && !check.ok)) && (
@@ -205,6 +215,17 @@ export function SettingsView() {
           </div>
         ))}
       </div>
+
+      {/* Follows the scroll while anything is unsaved, so Save is never off screen. */}
+      {dirty && (
+        <div className="sticky bottom-3 z-20 flex flex-col gap-2 rounded-lg border border-accent-blue/40 bg-bg-card/95 px-4 py-3 shadow-xl backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+          <span className="text-sm">
+            {changeCount} unsaved {changeCount === 1 ? "change" : "changes"}
+            {!check.ok && <span className="ml-2 text-accent-red">— {check.error}</span>}
+          </span>
+          {saveButtons}
+        </div>
+      )}
     </div>
   );
 }

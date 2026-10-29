@@ -97,6 +97,7 @@ export function Header() {
             <BotToggle
               on={status?.botOn ?? false}
               feedLive={status?.feedLive ?? false}
+              watchOnly={status?.watchOnly ?? false}
               available={connected && status !== null}
               isPaper={isPaper}
             />
@@ -240,11 +241,13 @@ function Connection({ connected }: { connected: boolean }) {
 function BotToggle({
   on,
   feedLive,
+  watchOnly,
   available,
   isPaper,
 }: {
   on: boolean;
   feedLive: boolean;
+  watchOnly: boolean;
   available: boolean;
   isPaper: boolean;
 }) {
@@ -272,7 +275,9 @@ function BotToggle({
         !available
           ? "Engine not connected"
           : on
-            ? feedLive
+            ? watchOnly
+              ? "Watching only (WATCH_ONLY): launches are detected, judged and shadow-tracked, but no position opens. Click to stop."
+              : feedLive
               ? "Stop: unsubscribe from the RPC provider and open no new positions (open ones keep their exits)"
               : "On, but no feed is delivering pools — check the RPC settings"
             : "Start: subscribe to new pools (spends RPC credits), filter them and paper-trade the snipes"
@@ -280,7 +285,9 @@ function BotToggle({
       className={`${PILL} gap-1.5 font-semibold tracking-wide transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
         !on
           ? "border-border bg-bg-card text-fg-muted hover:text-fg"
-          : feedLive
+          : watchOnly && feedLive
+            ? "border-accent-blue/40 bg-accent-blue/10 text-accent-blue hover:bg-accent-blue/20"
+            : feedLive
             ? "border-accent-green/40 bg-accent-green/10 text-accent-green hover:bg-accent-green/20"
             : "border-accent-amber/40 bg-accent-amber/10 text-accent-amber"
       }`}
@@ -290,7 +297,7 @@ function BotToggle({
         "…"
       ) : (
         <>
-          {on ? "Bot ON" : "Bot OFF"}
+          {on ? (watchOnly ? "Watching" : "Bot ON") : "Bot OFF"}
           {on && !feedLive && <span className="hidden sm:inline"> · no feed</span>}
         </>
       )}

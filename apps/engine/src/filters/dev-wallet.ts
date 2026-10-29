@@ -2,11 +2,25 @@ import type { Filter } from "./types.js";
 import { makeResult } from "./types.js";
 import { env } from "../config/env.js";
 import { getPrisma } from "../state/db.js";
+import type { DexSource as DbDexSource } from "@prisma/client";
+import { dexSourceToPrisma } from "../feeds/pool-detector.js";
 import { childLogger } from "../utils/logger.js";
 
 const log = childLogger("filter:dev-wallet");
 const cache = new Map<string, { rugRate: number; cachedAt: number }>();
 const CACHE_TTL = 30 * 60 * 1000; // 30 min
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * A wallet that launched `max` coins or more in the last day is a launch farm.
+ * Of 592 shadow-tracked pump.fun launches by creators with 3+ earlier
+ * launches, none graduated, and buying them lost $6-7 a trade against $2-3
+ * for a first launch, in both halves of the night. Null: not a farm, or off.
+ */
+export function launchFarmReason(launches24h: number, max: number): string | null {
+  if (max <= 0 || launches24h < max) return null;
+  return `launched ${launches24h} other coins in the last 24 h (max ${max - 1}): a launch farm`;
+}
 
 async function fetchRugCheckScore(wallet: string): Promise<number | null> {
   try {
@@ -49,6 +63,31 @@ export const devWalletFilter: Filter = {
 
     const wallet = pool.creatorWallet;
 
+    // 0. Launch farms, from the pools this bot has seen. Every launch is
+    // recorded, so this needs no outside service and is never "unknown".
+    let launches24h: number | null = null;
+    if (ctx.cfg.devMaxLaunches24h > 0 && wallet) {
+      try {
+        launches24h = await getPrisma().pool.count({
+          where: {
+            creatorWallet: wallet,
+            source: dexSourceToPrisma[pool.source] as DbDexSource,
+            tokenMint: { not: pool.tokenMint },
+            detectedAt: { gte: new Date(pool.detectedAt - DAY_MS), lt: new Date(pool.detectedAt) },
+          },
+        });
+        const farm = launchFarmReason(launches24h, ctx.cfg.devMaxLaunches24h);
+        if (farm) {
+          return makeResult("dev-wallet", "fail", farm, {
+            metadata: { source: "launch-history", launches24h, max: ctx.cfg.devMaxLaunches24h },
+            durationMs: Date.now() - start,
+          });
+        }
+      } catch (err) {
+        log.warn({ err, wallet }, "launch history lookup failed");
+      }
+    }
+
     // 1. Check local DB
     try {
       const prisma = getPrisma();
@@ -87,7 +126,7 @@ export const devWalletFilter: Filter = {
       // Unknown wallet — treat as neutral pass with low confidence
       return makeResult("dev-wallet", "pass", "unknown wallet (no history)", {
         score: 50,
-        metadata: { source: "unknown" },
+        metadata: { source: "unknown", launches24h },
         durationMs: Date.now() - start,
       });
     }

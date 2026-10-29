@@ -14,6 +14,8 @@ import type {
   PositionUpdateEvent,
   ResetResult,
   SettingsSnapshot,
+  ShadowReport,
+  StrategyCheck,
   StatsWindowKey,
   TradeStatsWindow,
 } from "@sniperbot/shared";
@@ -29,6 +31,9 @@ import type { DrawdownCircuit, HaltReason } from "../risk/drawdown-circuit.js";
 import type { BotSwitch } from "../execution/bot-switch.js";
 import { rpcUsage } from "../utils/rpc-meter.js";
 import { computeAnalytics } from "../analytics/filter-performance.js";
+import { loadShadowReport } from "../analytics/shadow-report.js";
+import { loadStrategyCheck } from "../analytics/strategy-check.js";
+import { SHADOW_DIR } from "../analytics/shadow-tracker.js";
 import { computeStatsWindow } from "../analytics/stats-window.js";
 import { runBacktest } from "../analytics/backtest.js";
 import {
@@ -65,6 +70,8 @@ export interface ClientToServerEvents {
   ) => void;
   "bankroll:get": (ack: (snap: BankrollSnapshot) => void) => void;
   "analytics:get": (ack: (snap: AnalyticsSnapshot) => void) => void;
+  "shadow:report": (ack: (result: { ok: boolean; report?: ShadowReport; error?: string }) => void) => void;
+  "strategy:check": (ack: (result: { ok: boolean; check?: StrategyCheck; error?: string }) => void) => void;
   "stats:get": (
     windowKey: StatsWindowKey,
     ack: (result: { ok: boolean; stats?: TradeStatsWindow; error?: string }) => void,
@@ -119,6 +126,8 @@ export interface SystemStatus {
   botOn: boolean;
   // on, and something is actually delivering pools
   feedLive: boolean;
+  // WATCH_ONLY: on means detecting, judging and shadow-tracking, never buying
+  watchOnly: boolean;
   // since the engine started — rpcRequests is roughly the credits spent
   rpcRequests: number;
   logNotifications: number;
@@ -212,6 +221,24 @@ export class SocketServer {
           ack(snap);
         } catch (err) {
           log.warn({ err }, "analytics:get failed");
+        }
+      });
+
+      socket.on("shadow:report", async (ack) => {
+        try {
+          ack({ ok: true, report: await loadShadowReport(SHADOW_DIR) });
+        } catch (err) {
+          log.warn({ err }, "shadow:report failed");
+          ack({ ok: false, error: (err as Error).message });
+        }
+      });
+
+      socket.on("strategy:check", async (ack) => {
+        try {
+          ack({ ok: true, check: await loadStrategyCheck(this.pnl.buildSnapshot().balanceUsd) });
+        } catch (err) {
+          log.warn({ err }, "strategy:check failed");
+          ack({ ok: false, error: (err as Error).message });
         }
       });
 
@@ -376,6 +403,7 @@ export class SocketServer {
       activePreset: filterConfig.activeName(),
       botOn: this.bot.isOn(),
       feedLive: this.bot.feedLive(),
+      watchOnly: env.WATCH_ONLY,
       ...rpcUsage(),
       circuit: {
         halted: circuitStats.halted,

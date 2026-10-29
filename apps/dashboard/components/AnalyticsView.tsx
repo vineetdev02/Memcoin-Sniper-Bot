@@ -3,11 +3,21 @@
 import { useCallback, useEffect, useState } from "react";
 import { getSocket } from "@/lib/socket";
 import { formatUsd } from "@/lib/format";
-import { FILTER_LABELS, type AnalyticsSnapshot, type BucketPerformance } from "@sniperbot/shared";
+import {
+  FILTER_LABELS,
+  type AnalyticsSnapshot,
+  type BucketPerformance,
+  type ShadowReport,
+  type StrategyCheck,
+} from "@sniperbot/shared";
+import { ShadowReportCard } from "./ShadowReportCard";
+import { StrategyCheckCard } from "./StrategyCheckCard";
 import { RefreshCw } from "lucide-react";
 
 export function AnalyticsView() {
   const [snap, setSnap] = useState<AnalyticsSnapshot | null>(null);
+  const [shadow, setShadow] = useState<ShadowReport | null>(null);
+  const [check, setCheck] = useState<StrategyCheck | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
@@ -23,6 +33,12 @@ export function AnalyticsView() {
       clearTimeout(timeout);
       setSnap(s);
       setLoading(false);
+    });
+    socket.emit("shadow:report", (res) => {
+      if (res.ok && res.report) setShadow(res.report);
+    });
+    socket.emit("strategy:check", (res) => {
+      if (res.ok && res.check) setCheck(res.check);
     });
   }, []);
 
@@ -58,6 +74,10 @@ export function AnalyticsView() {
         </div>
       )}
 
+      {check && <StrategyCheckCard check={check} />}
+
+      {shadow && <ShadowReportCard report={shadow} />}
+
       {!snap && !err ? (
         <SkeletonCard />
       ) : snap && snap.totalClosed === 0 ? (
@@ -71,7 +91,10 @@ export function AnalyticsView() {
             <FilterPerfTable snap={snap} />
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <BucketCard title="By DEX source" buckets={snap.byDex} />
-              <BucketCard title="By initial liquidity" buckets={snap.byLiquidity} />
+              {/* every pump.fun launch has the same virtual liquidity, so one bucket says nothing */}
+              {snap.byLiquidity.filter((b) => b.trades > 0).length > 1 && (
+                <BucketCard title="By initial liquidity" buckets={snap.byLiquidity} />
+              )}
               <BucketCard title="By filter score bucket" buckets={snap.byScoreBucket} />
               <BucketCard
                 title="By hour of day (UTC)"
@@ -87,19 +110,24 @@ export function AnalyticsView() {
 
 function SummaryCards({ snap }: { snap: AnalyticsSnapshot }) {
   const pf = Number.isFinite(snap.profitFactor) ? snap.profitFactor.toFixed(2) : "∞";
-  const pnlPositive = snap.netPnlUsd >= 0;
+  const pnlPositive = snap.netPnlUsd > 0;
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
       <Stat label="Closed positions" value={String(snap.totalClosed)} tone="default" />
       <Stat
         label="Net P&L"
         value={`${pnlPositive ? "+" : ""}${formatUsd(snap.netPnlUsd)}`}
-        tone={pnlPositive ? "good" : "bad"}
+        tone={snap.netPnlUsd > 0 ? "good" : snap.netPnlUsd < 0 ? "bad" : "default"}
       />
       <Stat label="Win rate" value={`${snap.baselineWinRatePct.toFixed(1)}%`} tone="default" />
       <Stat label="Profit factor" value={pf} tone={snap.profitFactor >= 1 ? "good" : "bad"} />
     </div>
   );
+}
+
+/** Green for a gain, red for a loss, neutral for exactly nothing. */
+function pnlText(usd: number): string {
+  return usd > 0 ? "text-accent-green" : usd < 0 ? "text-accent-red" : "text-fg-muted";
 }
 
 function Stat({ label, value, tone }: { label: string; value: string; tone: "good" | "bad" | "default" }) {
@@ -151,7 +179,7 @@ function FilterPerfTable({ snap }: { snap: AnalyticsSnapshot }) {
               </td>
               <td
                 className={`px-3 py-2 text-right tabular-nums ${
-                  f.netPnlUsd >= 0 ? "text-accent-green" : "text-accent-red"
+                  pnlText(f.netPnlUsd)
                 }`}
               >
                 {formatUsd(f.netPnlUsd)}
@@ -188,7 +216,7 @@ function BucketCard({ title, buckets }: { title: string; buckets: BucketPerforma
             <div className="relative h-4 rounded bg-bg-elevated overflow-hidden">
               <div
                 className={`absolute inset-y-0 left-0 ${
-                  b.netPnlUsd >= 0 ? "bg-accent-green/40" : "bg-accent-red/40"
+                  b.netPnlUsd > 0 ? "bg-accent-green/40" : b.netPnlUsd < 0 ? "bg-accent-red/40" : "bg-fg-subtle/30"
                 }`}
                 style={{ width: `${maxTrades > 0 ? (b.trades / maxTrades) * 100 : 0}%` }}
               />
@@ -201,7 +229,7 @@ function BucketCard({ title, buckets }: { title: string; buckets: BucketPerforma
             </span>
             <span
               className={`tabular-nums text-right ${
-                b.netPnlUsd >= 0 ? "text-accent-green" : "text-accent-red"
+                pnlText(b.netPnlUsd)
               }`}
             >
               {formatUsd(b.netPnlUsd, { compact: true })}

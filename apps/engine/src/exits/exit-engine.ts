@@ -108,6 +108,7 @@ export class ExitEngine {
           decision.tokensToSell!,
           liq,
           decision.reason!,
+          updated.source,
         );
         const trade = sellResultToTrade(updated.id, sell);
         this.store.applyPartialSell(updated.id, sell.tokensSold, sell.proceedsUsd, trade, decision.tpIndex!);
@@ -121,6 +122,7 @@ export class ExitEngine {
           updated.remainingTokens,
           liq,
           decision.reason!,
+          updated.source,
         );
         const trade = sellResultToTrade(updated.id, sell);
         this.store.closeFully(updated.id, sell.proceedsUsd, trade, decision.reason!);
@@ -143,7 +145,7 @@ export class ExitEngine {
     if (!pastWindow || now - since < UNPRICED_WRITE_OFF_MS) return;
     this.unpricedSince.delete(p.id);
     this.fullCloses++;
-    const sell = paperExecutor.sell(p.entryPriceUsd, 0, p.remainingTokens, 0, "time-exit");
+    const sell = paperExecutor.sell(p.entryPriceUsd, 0, p.remainingTokens, 0, "time-exit", p.source);
     this.store.closeFully(p.id, sell.proceedsUsd, sellResultToTrade(p.id, sell), "time-exit");
     log.warn({ id: p.id.slice(0, 8), mint: p.tokenMint.slice(0, 8) }, "no market price past the time window — written off at $0");
   }
@@ -211,6 +213,7 @@ export class ExitEngine {
       p.remainingTokens,
       liq,
       reason,
+      p.source,
     );
     const trade = sellResultToTrade(p.id, sell);
     this.fullCloses++;
@@ -232,6 +235,7 @@ export class ExitEngine {
         p.remainingTokens,
         liq,
         "kill-switch",
+        p.source,
       );
       const trade = sellResultToTrade(p.id, sell);
       this.store.closeFully(p.id, sell.proceedsUsd, trade, "kill-switch");
@@ -264,6 +268,7 @@ export class ExitEngine {
         updated.remainingTokens,
         m.liquidityUsd,
         "manual",
+        updated.source,
       );
       this.store.closeFully(p.id, sell.proceedsUsd, sellResultToTrade(p.id, sell), "manual");
       this.fullCloses++;

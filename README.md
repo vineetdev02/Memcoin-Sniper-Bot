@@ -4,7 +4,7 @@
 
 **A Solana memecoin sniper built around what it refuses to buy.**
 
-It watches pump.fun, PumpSwap and Raydium for new pools, runs every launch through thirteen rug and
+It watches pump.fun, PumpSwap and Raydium for new pools, runs every launch through fourteen rug and
 honeypot checks, paper-trades the survivors with disciplined exits, and shows all of it on a live
 dashboard.
 
@@ -38,7 +38,7 @@ find it.
 - [Highlights](#highlights)
 - [Screenshots](#screenshots)
 - [Why filter-first](#why-filter-first)
-- [How it works](#how-it-works): the pipeline, the thirteen filters, exits and risk
+- [How it works](#how-it-works): the pipeline, the fourteen filters, exits and risk
 - [Quick start](#quick-start)
 - [The dashboard](#the-dashboard)
 - [Telegram alerts](#telegram-alerts)
@@ -107,7 +107,7 @@ buy** and **when you sell**:
                                                    │ waits EVAL_DELAY_SEC (90s)
                                                    ▼
                                     ┌─────────────────────────────┐
-                                    │ Filter orchestrator         │  13 filters in parallel, weighted score
+                                    │ Filter orchestrator         │  14 filters in parallel, weighted score
                                     │  any hard fail  → reject    │
                                     │  score < min    → reject    │
                                     └──────────────┬──────────────┘
@@ -124,12 +124,12 @@ buy** and **when you sell**:
                  Postgres (history) · Redis (streams) · Socket.IO ─▶ Dashboard · Telegram
 ```
 
-### The thirteen filters
+### The fourteen filters
 
 | Filter | Rejects when | Weight |
 | --- | --- | --- |
 | `honeypot-sim` | a 0.01 SOL buy-and-sell round trip through Jupiter cannot sell, or costs more than the max sell tax (a pump.fun curve passes: its program executes every sell) | 15 |
-| `dev-wallet` | the creator is a known rugger or has a high rug rate | 12 |
+| `dev-wallet` | the creator launched 3+ other coins in the last 24 hours (a launch farm), or is a known rugger | 12 |
 | `mint-authority` | the dev can still mint more supply | 10 |
 | `freeze-authority` | the dev can still freeze holders' tokens | 10 |
 | `lp-locked` | liquidity is neither burned nor locked | 10 |
@@ -141,10 +141,20 @@ buy** and **when you sell**:
 | `curve-demand` | a pump.fun curve holds under 1 SOL of buying: nobody is holding the coin | 4 |
 | `anti-sniper-war` | the first block was already crowded with snipers | 4 |
 | `social-signal` | its DexScreener profile shows too little social presence (no profile at all is unknown: profiles are paid) | 3 |
+| `smart-money` | none of the wallets that keep buying graduates bought it in its first 15 s (pump.fun only; off unless a preset turns it on) | 8 |
 
 Every filter can be toggled and tuned from the dashboard, and settings can be saved as presets
-(**Safe**, **Aggressive** and **Learning** ship built in). Every verdict is stored, so the
+(**Safe**, **Aggressive**, **Hot Start** and **Learning** ship built in). Every verdict is stored, so the
 analytics page can show which filters actually predict winners.
+
+**Hot Start** is pump.fun only and buys a curve that already holds 20 SOL when it is judged; set
+*Wait before judging* to 15 s with it. Of 1,052 shadow-tracked launches on the first night, that
+was the one group that made money in both halves of the night (+$5.89 a trade over 21, while
+buying every launch at the same moment lost $4.53 a trade over 572). **On the launches that came
+after it was chosen it did not hold:** -$3.85 a trade over 43 replayed, and -$18.10 over 12 real
+paper trades. It loses less than buying everything ($5.32 a trade over the same launches), but
+nothing tells it apart from break-even, let alone a profit. Treat it as the least-bad rule found so far, not a profitable one; the strategy
+check below keeps scoring it as launches come in.
 
 ### Exits and risk
 
@@ -170,8 +180,62 @@ analytics page can show which filters actually predict winners.
 - **Drawdown circuit**: halts new entries for 24 hours after a 10% daily loss or 20 losses in a
   row, and for 72 hours after a 25% weekly loss. Exits keep running during a halt.
 
-The paper executor models slippage from pool depth, failed fills, MEV sandwich losses and Jito
-tips, so paper results are not flattering fiction.
+The paper executor models slippage from pool depth, failed fills, MEV sandwich losses, Jito
+tips and pump.fun's 1.25% fee on curve sells (a buy's quote already pays it), so paper results
+are not flattering fiction.
+
+### Testing a strategy before it trades
+
+The bot buys a few dozen coins a night; the shadow tracker (`SHADOW_TRACKING`) follows *every*
+pump.fun launch, bought or not, by reading its bonding curve every 3 seconds for 22 minutes. The
+**strategy check** on the Analytics page replays the current settings on those paths: buy
+*Wait before judging* + 2 seconds after launch when the curve holds the Demand filter's minimum,
+then run the stop-loss, ladder, trailing stop and time exit exactly as the exit engine does. Each
+trade moves along the curve's own x·y=k and pays pump.fun's fee both ways and the average
+sandwich, and exits fill 3 seconds late. Set against ten of the bot's own paper trades it came out
+about $2 a trade kinder in total, with single trades off by as much as $30 either way, so read
+its totals rather than any one trade. It shows the result per trade with a 95% range, in each
+half of the window, against buying every launch at the same moment, and at other entry delays.
+A rule only *holds* when the whole range is above break-even and both halves made money; with
+twenty or fifty trades and a handful of graduations carrying every winner, most rules land on
+"cannot be told apart from break-even", and that is the honest answer.
+
+What two nights of it found, so nobody has to find it again:
+
+- **Buying every launch loses $4-6 a trade at any delay from 10 s to 90 s**, on both nights,
+  well outside the range of luck (-$4.60, range -$5.73 to -$3.46, over 1,112). Fees, the
+  sandwich and price impact cost about 4% a round trip, and the average launch only falls.
+- **Launch farms almost never graduate.** About two in five launches come from a wallet that
+  had already launched 3+ coins that day; 1 of their 645 graduated, against 10 of 615 first
+  launches, and that held on fresh launches. Dev History fails them
+  (`FILTER_DEV_MAX_LAUNCHES_24H`), counted from the pools the bot has already recorded, so it
+  needs no outside service. On the first night they also lost more per trade; on fresh launches
+  they did not ($4.49 a trade against $4.99 for everyone else), so it is a safety rule, not a
+  profit lever. The Demand line already keeps most of them out of Hot Start (4 of its 41 trades).
+- **Filters that judge the early trading do not help.** Sniper War's rejects pumped 7.3% of
+  the time, its passes 1.9%: it turns away the coins with demand. The Analytics page shows
+  this per filter.
+- **A full curve 15-20 s in was the best group on the first night and did not hold on the
+  next.** That is the Hot Start preset: +$5.89 a trade before it was chosen, -$3.85 after (n=43). A
+  rule picked from one night's data has to be tested on launches it has not seen; this one was,
+  and failed.
+- **Tuning the exits on one night overfits too.** Of 240 combinations of stop-loss, trailing
+  stop, time exit and ladder, none made buying every launch profitable on either night. For Hot
+  Start, the set that did best on the first night (+$17 a trade) ranked 196th of 240 on the next
+  (-$8.48); the current exits sat in between both times. Set the exits for the risk you want,
+  not because a replay liked them.
+- **Wallets that keep picking graduates do pick them, and buying behind them still loses.**
+  Early buyers of 3,564 launches were read from the chain. Picked the way the Smart Money filter
+  picks them, from launches that had already ended, the wallets bought 82 later launches in
+  their first 15 s, and 16% of those graduated against 1% of the rest. Bought at 17 s they lost
+  $6.94 a trade (range -$10.30 to -$3.60), and at 3 s $7.63. Wallets that made money on one
+  night's replays, and launches with 8+ early buyers, both lost on the next.
+- **The loss is there before any cost.** With no fee, no sandwich, no latency and no graduation
+  haircut, buying every launch 1 s after the feed sees it still loses $5.56 a trade (n=885), and
+  the Smart Money launches $3.32. The feed sees a launch about 2 s after it is created, after
+  the same-block snipers have bought, and they sell into whoever comes next. No filter or exit
+  setting measured here turns that around; trading earlier than the feed can see is a different
+  bot.
 
 ---
 
@@ -240,7 +304,7 @@ each replayed pool runs the preset's filters against the RPC, even while the bot
 | **Positions** | open paper positions, live P&L, TP ladder progress |
 | **History** | every closed trade and why it closed |
 | **Stats** | trade results over a window from 10 minutes to all time, broken down by DEX and by close reason |
-| **Analytics** | win rate, profit factor, per-filter lift, results by DEX, liquidity and hour |
+| **Analytics** | the strategy check, what each filter turned away, win rate, profit factor, per-filter lift, results by DEX and hour |
 | **Filters** | toggle and tune filters, save and activate presets |
 | **Backtest** | replay stored pools through any preset without touching live trading |
 | **Settings** | change sizing, exits, risk limits and the filter delay while it runs; start the paper account over at a new amount |
@@ -318,10 +382,14 @@ writes everything it deletes to `apps/engine/backups/` first, and keeps presets 
 | `TP_LADDER` | `50:25,100:25,300:25,900:15` | `gain%:sell%` steps |
 | `STOP_LOSS_PCT` | `-40` | hard stop |
 | `FILTER_MIN_FILTER_SCORE` | `70` | minimum weighted score to buy |
+| `FILTER_MIN_CURVE_SOL` | `1` | the Demand filter: SOL a pump.fun curve must hold when it is judged |
+| `FILTER_DEV_MAX_LAUNCHES_24H` | `3` | Dev History: a creator with this many other launches in 24 hours is a launch farm (`0` = off) |
 | `FILTER_LIQUIDITY_MIN_USD` / `_MAX_USD` | `5000` / `500000` | liquidity window |
 | `EVAL_DELAY_SEC` | `90` | how long a new pool waits before it is judged |
 | `DAILY_DRAWDOWN_LIMIT_PCT` | `10` | daily loss that halts entries |
 | `SELL_ON_SHUTDOWN` | `true` | paper: sell open positions at the market when the engine stops |
+| `WATCH_ONLY` | `false` | Bot ON detects, judges and shadow-tracks launches but opens no positions |
+| `SHADOW_TRACKING` | `true` | follow every pump.fun launch's curve for 22 min from detection, bought or not, and write the path, the filters' view and, with a PumpPortal API key funded with 0.02 SOL, every trade of its first 150 s to `apps/engine/data/shadow/` (about one RPC request a second) |
 | `ENABLE_PUMPFUN`, `ENABLE_PUMPSWAP`, `ENABLE_RAYDIUM_AMM` | | which DEXes to watch |
 
 Every value is validated at startup, and the engine refuses to start with a clear message rather
@@ -347,7 +415,7 @@ apps/
   engine/                 Node + TypeScript: the bot
     src/
       feeds/              PumpPortal and Helius streams, per-DEX parsers, synthetic feed
-      filters/            the thirteen filters and the orchestrator
+      filters/            the fourteen filters and the orchestrator
       execution/          paper executor, price simulator, trader
       exits/              exit engine (TP / SL / trailing / time), rug watcher
       risk/               drawdown circuit breaker
@@ -399,7 +467,7 @@ dashboard on every push and pull request.
 | --- | --- |
 | 0 · Setup: monorepo, Docker, Prisma, env validation | ✅ done |
 | 1 · Pool detection: Helius logs, pump.fun / PumpSwap / Raydium parsers | ✅ done |
-| 2 · Filter engine: thirteen filters, orchestrator, stored verdicts | ✅ code complete, validation against labelled tokens pending |
+| 2 · Filter engine: fourteen filters, orchestrator, stored verdicts | ✅ code complete, validation against labelled tokens pending |
 | 3 · Paper trading: executor, exits, rug watcher, P&L | ✅ done |
 | 4 · Analytics: per-filter stats, presets, backtest | ✅ done |
 | Telegram alerts | ✅ done |

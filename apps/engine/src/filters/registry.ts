@@ -12,6 +12,7 @@ import { antiSniperWarFilter } from "./anti-sniper-war.js";
 import { volumeVelocityFilter } from "./volume-velocity.js";
 import { curveDemandFilter } from "./curve-demand.js";
 import { socialSignalFilter } from "./social-signal.js";
+import { smartMoneyFilter } from "./smart-money.js";
 
 export const allFilters: Filter[] = [
   honeypotSimFilter,
@@ -26,6 +27,7 @@ export const allFilters: Filter[] = [
   antiSniperWarFilter,
   volumeVelocityFilter,
   curveDemandFilter,
+  smartMoneyFilter,
   socialSignalFilter,
 ];
 

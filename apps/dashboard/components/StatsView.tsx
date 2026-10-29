@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import type { StatsWindowKey, TradeStatsWindow, BucketPerformance, TradeHighlight } from "@sniperbot/shared";
 import { getSocket } from "@/lib/socket";
 import { formatUsd, shortAddress } from "@/lib/format";
+import { PnlBars, PeakVsKept } from "./TradeCharts";
 import {
   ArrowDownToLine,
   TrendingUp,
@@ -169,7 +170,7 @@ function StatsBody({ stats }: { stats: TradeStatsWindow }) {
             />
             <Card
               label="Started"
-              value={formatUsd(10_000, { compact: true })}
+              value={formatUsd(stats.startingBalanceUsd, { compact: true })}
               sub="paper bankroll basis"
               icon={Coins}
               tone="text-fg-muted"
@@ -199,6 +200,15 @@ function StatsBody({ stats }: { stats: TradeStatsWindow }) {
           {/* Bankroll chart */}
           {stats.bankrollSeries.length >= 2 && (
             <BankrollChart series={stats.bankrollSeries} />
+          )}
+
+          {/* Per-trade charts */}
+          {/* an engine from before these charts sends no trades */}
+          {(stats.trades ?? []).length > 0 && (
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+              <PnlBars trades={stats.trades} />
+              <PeakVsKept trades={stats.trades} />
+            </div>
           )}
 
           {/* Highlights */}
@@ -403,7 +413,9 @@ function BreakdownTable({ title, buckets }: { title: string; buckets: BucketPerf
 }
 
 function BankrollChart({ series }: { series: { ts: number; balanceUsd: number }[] }) {
-  // Simple inline SVG sparkline — no extra deps needed.
+  // Inline SVG, no chart dependency. The hover readout is HTML laid over it,
+  // because the SVG stretches (preserveAspectRatio="none") and would squash text.
+  const [hover, setHover] = useState<number | null>(null);
   const w = 800;
   const h = 160;
   const padding = 8;
@@ -415,11 +427,11 @@ function BankrollChart({ series }: { series: { ts: number; balanceUsd: number }[
   const yMax = Math.max(...ys);
   const xRange = Math.max(1, xMax - xMin);
   const yRange = Math.max(0.0001, yMax - yMin);
-  const points = series.map((p) => {
-    const x = padding + ((p.ts - xMin) / xRange) * (w - padding * 2);
-    const y = h - padding - ((p.balanceUsd - yMin) / yRange) * (h - padding * 2);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  });
+  const pts = series.map((p) => ({
+    x: padding + ((p.ts - xMin) / xRange) * (w - padding * 2),
+    y: h - padding - ((p.balanceUsd - yMin) / yRange) * (h - padding * 2),
+  }));
+  const points = pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`);
   const path = `M ${points.join(" L ")}`;
   const last = series[series.length - 1];
   const first = series[0];
@@ -431,20 +443,81 @@ function BankrollChart({ series }: { series: { ts: number; balanceUsd: number }[
     `L ${points.join(" L ")} ` +
     `L ${w - padding},${h - padding} Z`;
 
+  const onMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * w;
+    let best = 0;
+    pts.forEach((p, i) => {
+      if (Math.abs(p.x - x) < Math.abs((pts[best]?.x ?? 0) - x)) best = i;
+    });
+    setHover(best);
+  };
+  const hp = hover !== null ? pts[hover] : undefined;
+  const hs = hover !== null ? series[hover] : undefined;
+  const change = hs && first ? hs.balanceUsd - first.balanceUsd : 0;
+
   return (
     <div className="rounded-lg border border-border bg-bg-card px-3 py-3">
-      <div className="mb-2 flex items-center justify-between">
+      <div className="mb-2 flex items-center justify-between gap-2">
         <div className="text-[10px] uppercase tracking-wider text-fg-subtle">
           Bankroll over window
         </div>
         <div className="text-xs tabular-nums text-fg-muted">
-          {formatUsd(yMin, { compact: true })} → {formatUsd(yMax, { compact: true })}
+          <span className={trendUp ? "text-accent-green" : "text-accent-red"}>
+            {formatUsd(first?.balanceUsd ?? 0, { compact: true })} → {formatUsd(last?.balanceUsd ?? 0, { compact: true })}
+          </span>
+          <span className="ml-2 text-fg-subtle">
+            low {formatUsd(yMin, { compact: true })} · high {formatUsd(yMax, { compact: true })}
+          </span>
         </div>
       </div>
-      <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-40" preserveAspectRatio="none">
-        <path d={areaPath} fill={fill} />
-        <path d={path} fill="none" stroke={stroke} strokeWidth={1.5} />
-      </svg>
+      <div className="relative">
+        <svg
+          viewBox={`0 0 ${w} ${h}`}
+          className="w-full h-40 cursor-crosshair touch-none"
+          preserveAspectRatio="none"
+          onPointerMove={onMove}
+          onPointerLeave={() => setHover(null)}
+        >
+          <path d={areaPath} fill={fill} />
+          <path d={path} fill="none" stroke={stroke} strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+          {hp && (
+            <line
+              x1={hp.x}
+              x2={hp.x}
+              y1={0}
+              y2={h}
+              stroke="currentColor"
+              className="text-fg-subtle"
+              strokeDasharray="3 3"
+              vectorEffect="non-scaling-stroke"
+            />
+          )}
+        </svg>
+        {hp && hs && (
+          <>
+            <div
+              className="pointer-events-none absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-bg-card"
+              style={{ left: `${(hp.x / w) * 100}%`, top: `${(hp.y / h) * 100}%`, background: stroke }}
+            />
+            <div
+              className={`pointer-events-none absolute top-0 rounded-md border border-border bg-bg-card/95 whitespace-nowrap px-2 py-1 text-xs shadow-lg tabular-nums ${
+                hp.x > w / 2 ? "-translate-x-full -ml-2" : "ml-2"
+              }`}
+              style={{ left: `${(hp.x / w) * 100}%` }}
+            >
+              <div className="text-fg-subtle">
+                {new Date(hs.ts).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+              </div>
+              <div className="font-medium text-fg">{formatUsd(hs.balanceUsd)}</div>
+              <div className={change > 0 ? "text-accent-green" : change < 0 ? "text-accent-red" : "text-fg-muted"}>
+                {change > 0 ? "+" : ""}
+                {formatUsd(change)} since window start
+              </div>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

@@ -11,7 +11,8 @@ export type FilterId =
   | "social-signal"
   | "volume-velocity"
   | "curve-demand"
-  | "anti-sniper-war";
+  | "anti-sniper-war"
+  | "smart-money";
 
 export const FILTER_LABELS: Record<FilterId, string> = {
   "liquidity-min": "Liquidity",
@@ -27,6 +28,7 @@ export const FILTER_LABELS: Record<FilterId, string> = {
   "volume-velocity": "Volume",
   "curve-demand": "Demand",
   "anti-sniper-war": "Sniper War",
+  "smart-money": "Smart Money",
 };
 
 export const FILTER_ORDER: FilterId[] = [
@@ -42,8 +44,18 @@ export const FILTER_ORDER: FilterId[] = [
   "anti-sniper-war",
   "volume-velocity",
   "curve-demand",
+  "smart-money",
   "social-signal",
 ];
+
+/**
+ * Filters a preset has to turn on by name. Every other filter runs unless a
+ * preset turns it off, which is right for a safety check and wrong for one
+ * that passes a few launches in a hundred: a preset saved before it existed
+ * would stop trading.
+ */
+const OFF_UNLESS_CHOSEN: ReadonlySet<FilterId> = new Set<FilterId>(["smart-money"]);
+export const filterOnByDefault = (id: FilterId): boolean => !OFF_UNLESS_CHOSEN.has(id);
 
 export type FilterStatus = "pass" | "fail" | "skip" | "error";
 

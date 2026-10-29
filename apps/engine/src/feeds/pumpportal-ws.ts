@@ -15,14 +15,33 @@ const BASE58_KEY = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const BASE58_SIGNATURE = /^[1-9A-HJ-NP-Za-km-z]{64,90}$/;
 const MAX_RETRY_MS = 60_000;
 const PING_EVERY_MS = 30_000;
+const TRADES_NEED_KEY = /only available when connecting with an API key/i;
 
 export interface PumpPortalWants {
   pumpfun: boolean;
   pumpswap: boolean;
 }
 
+/** One buy or sell on a pump.fun curve, from a token-trade subscription. */
+export interface PumpPortalTrade {
+  mint: string;
+  trader: string;
+  side: "buy" | "sell";
+  sol: number;
+  receivedAt: number;
+}
+
+/** What a launch's create message says beyond the pool itself, kept on the event. */
+export interface PumpPortalLaunchInfo {
+  name?: string;
+  symbol?: string;
+  // the creator's own buy in the create transaction
+  devBuySol?: number;
+}
+
 export type PumpPortalItem =
   | { kind: "pool"; event: PoolEvent }
+  | { kind: "trade"; trade: PumpPortalTrade }
   | { kind: "migration"; creation: PendingCreation }
   | { kind: "notice"; text: string };
 
@@ -62,7 +81,19 @@ export function readPumpPortalMessage(
   if (txType === "create" && pool === "pump" && wants.pumpfun) {
     const creator = msg.traderPublicKey;
     if (typeof creator !== "string" || !BASE58_KEY.test(creator)) return null;
-    return { kind: "pool", event: pumpFunLaunch(mint, creator, signature, receivedAt) };
+    const info: PumpPortalLaunchInfo = {
+      name: typeof msg.name === "string" ? msg.name.slice(0, 64) : undefined,
+      symbol: typeof msg.symbol === "string" ? msg.symbol.slice(0, 16) : undefined,
+      devBuySol: typeof msg.solAmount === "number" && Number.isFinite(msg.solAmount) ? msg.solAmount : undefined,
+    };
+    return { kind: "pool", event: { ...pumpFunLaunch(mint, creator, signature, receivedAt), rawEvent: info } };
+  }
+  if ((txType === "buy" || txType === "sell") && pool === "pump") {
+    const trader = msg.traderPublicKey;
+    const sol = msg.solAmount;
+    if (typeof trader !== "string" || !BASE58_KEY.test(trader)) return null;
+    if (typeof sol !== "number" || !Number.isFinite(sol)) return null;
+    return { kind: "trade", trade: { mint, trader, side: txType, sol, receivedAt } };
   }
   if (txType === "migrate" && pool === "pump-amm" && wants.pumpswap) {
     return { kind: "migration", creation: { signature, source: "pumpswap", receivedAt } };
@@ -72,6 +103,7 @@ export function readPumpPortalMessage(
 
 interface PumpPortalStreamEvents {
   pool: (event: PoolEvent) => void;
+  trade: (trade: PumpPortalTrade) => void;
   log: (creation: PendingCreation) => void;
 }
 
@@ -99,6 +131,10 @@ export class PumpPortalStream extends EventEmitter {
   private retryTimer: NodeJS.Timeout | null = null;
   private pingTimer: NodeJS.Timeout | null = null;
   private readonly wants: PumpPortalWants;
+  // token-trade subscriptions to restore after a reconnect
+  private readonly watched = new Set<string>();
+  // PumpPortal serves token trades only to a funded API key, and says so per subscribe
+  private tradesLocked = false;
 
   constructor() {
     super();
@@ -116,6 +152,28 @@ export class PumpPortalStream extends EventEmitter {
 
   isReady(): boolean {
     return this.open;
+  }
+
+  /** False once PumpPortal has refused token-trade subscriptions on this connection's key. */
+  tradesAvailable(): boolean {
+    return !this.tradesLocked;
+  }
+
+  /** Every buy and sell on these tokens arrives as a "trade" event, on the same connection. */
+  watchTrades(mints: string[]): void {
+    if (this.tradesLocked) return;
+    for (const m of mints) this.watched.add(m);
+    this.send({ method: "subscribeTokenTrade", keys: mints });
+  }
+
+  unwatchTrades(mints: string[]): void {
+    if (this.tradesLocked) return;
+    for (const m of mints) this.watched.delete(m);
+    this.send({ method: "unsubscribeTokenTrade", keys: mints });
+  }
+
+  private send(msg: object): void {
+    if (this.open && this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
   }
 
   /** Migrations are parsed from their transaction, on the same RPC the filters use. */
@@ -162,6 +220,7 @@ export class PumpPortalStream extends EventEmitter {
         this.retries = 0;
         if (this.wants.pumpfun) ws.send(JSON.stringify({ method: "subscribeNewToken" }));
         if (this.wants.pumpswap) ws.send(JSON.stringify({ method: "subscribeMigration" }));
+        if (this.watched.size > 0) ws.send(JSON.stringify({ method: "subscribeTokenTrade", keys: [...this.watched] }));
         // A connection that died without a close frame would otherwise just go quiet.
         this.pingTimer = setInterval(() => {
           if (!alive) {
@@ -208,8 +267,17 @@ export class PumpPortalStream extends EventEmitter {
   private handle(text: string): void {
     const item = readPumpPortalMessage(text, Date.now(), this.wants);
     if (!item) return;
-    if (item.kind === "notice") log.info({ notice: item.text }, "PumpPortal");
+    if (item.kind === "notice" && TRADES_NEED_KEY.test(item.text)) {
+      if (!this.tradesLocked) {
+        log.warn(
+          "PumpPortal serves token trades only to an API key funded with 0.02 SOL — the launch tape is off. Put the key in PUMPPORTAL_WS_URL to turn it on.",
+        );
+      }
+      this.tradesLocked = true;
+      this.watched.clear();
+    } else if (item.kind === "notice") log.info({ notice: item.text }, "PumpPortal");
     else if (item.kind === "pool") this.emit("pool", item.event);
+    else if (item.kind === "trade") this.emit("trade", item.trade);
     else this.emit("log", item.creation);
   }
 }

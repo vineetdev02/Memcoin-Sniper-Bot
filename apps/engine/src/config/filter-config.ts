@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import type { FilterConfigDelta, FilterId } from "@sniperbot/shared";
+import { filterOnByDefault, type FilterConfigDelta, type FilterId } from "@sniperbot/shared";
 import { env } from "./env.js";
 import { childLogger } from "../utils/logger.js";
 
@@ -18,6 +18,8 @@ export interface ResolvedFilterConfig {
   honeypotSimRequired: boolean;
   maxSellTaxPct: number;
   bundledLaunchReject: boolean;
+  minCurveSol: number;
+  devMaxLaunches24h: number;
   minFilterScore: number;
 }
 
@@ -53,7 +55,7 @@ class FilterConfigStore extends EventEmitter {
     const t = d?.thresholds ?? {};
     const enabledMap = d?.enabled ?? {};
     return {
-      enabled: (id) => enabledMap[id] ?? true,
+      enabled: (id) => enabledMap[id] ?? filterOnByDefault(id),
       liquidityMinUsd: t.liquidityMinUsd ?? env.FILTER_LIQUIDITY_MIN_USD,
       liquidityMaxUsd: t.liquidityMaxUsd ?? env.FILTER_LIQUIDITY_MAX_USD,
       lpLockedRequired: t.lpLockedRequired ?? env.FILTER_LP_LOCKED_REQUIRED,
@@ -65,6 +67,8 @@ class FilterConfigStore extends EventEmitter {
       honeypotSimRequired: t.honeypotSimRequired ?? env.FILTER_HONEYPOT_SIM_REQUIRED,
       maxSellTaxPct: t.maxSellTaxPct ?? env.FILTER_MAX_SELL_TAX_PCT,
       bundledLaunchReject: t.bundledLaunchReject ?? env.FILTER_BUNDLED_LAUNCH_REJECT,
+      minCurveSol: t.minCurveSol ?? env.FILTER_MIN_CURVE_SOL,
+      devMaxLaunches24h: t.devMaxLaunches24h ?? env.FILTER_DEV_MAX_LAUNCHES_24H,
       minFilterScore: t.minFilterScore ?? env.FILTER_MIN_FILTER_SCORE,
     };
   }

@@ -3,6 +3,7 @@ import type {
   BucketPerformance,
   StatsWindowKey,
   TradeHighlight,
+  TradePoint,
   TradeStatsWindow,
 } from "@sniperbot/shared";
 import { startingBalanceUsd } from "../config/trading-settings.js";
@@ -20,6 +21,9 @@ export const WINDOW_MS: Record<StatsWindowKey, number> = {
   "7d": 7 * 24 * 60 * 60_000,
   all: 0,
 };
+
+// enough bars to read a session, few enough to keep each one wider than a pixel
+const MAX_TRADE_POINTS = 300;
 
 interface ClosedRow {
   id: string;
@@ -107,6 +111,20 @@ export async function computeStatsWindow(windowKey: StatsWindowKey): Promise<Tra
   const byDex = bucketBy(closed, (p) => p.pool.source);
   const byCloseReason = bucketBy(closed, (p) => p.closeReason ?? "manual");
 
+  // === Per-trade points: newest first from the query, so cut then reverse ===
+  const trades: TradePoint[] = closed
+    .slice(0, MAX_TRADE_POINTS)
+    .reverse()
+    .map((p) => ({
+      closedAt: p.closedAt?.getTime() ?? 0,
+      tokenMint: p.tokenMint,
+      pnlUsd: p.realizedPnlUsd,
+      pnlPct: p.entrySizeUsd > 0 ? (p.realizedPnlUsd / p.entrySizeUsd) * 100 : 0,
+      peakGainPct: p.peakGainPct,
+      holdSec: p.closedAt ? Math.round((p.closedAt.getTime() - p.openedAt.getTime()) / 1000) : 0,
+      reason: p.closeReason ?? "manual",
+    }));
+
   // === Highlights ===
   const topWinner = pickHighlight(closed, "best");
   const topLoser = pickHighlight(closed, "worst");
@@ -176,11 +194,13 @@ export async function computeStatsWindow(windowKey: StatsWindowKey): Promise<Tra
     avgWinPct,
     avgLossPct,
     roiPct,
+    startingBalanceUsd: startingUsd,
     byDex,
     byCloseReason,
     topWinner,
     topLoser,
     bankrollSeries,
+    trades,
     takenAt: Date.now(),
   };
 }

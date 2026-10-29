@@ -7,6 +7,12 @@ const log = childLogger("paper-exec");
 
 const SOL_USD_ESTIMATE = 200; // rough; only used to convert SOL fees to USD
 const NETWORK_FEE_LAMPORTS = 5000;
+/**
+ * pump.fun's cut of every curve trade: 0.95% protocol plus 0.30% creator at
+ * low market caps. A buy's Jupiter quote already pays it; a sell priced off the
+ * index does not, so it is taken here.
+ */
+export const PUMPFUN_FEE_PCT = 1.25;
 const LAMPORTS_PER_SOL = 1_000_000_000;
 
 export interface PaperBuyResult {
@@ -63,6 +69,7 @@ export interface PaperExecutor {
     tokens: number,
     liquidityUsd: number,
     exitReason: ExitReason,
+    source?: string,
   ): PaperSellResult;
 }
 
@@ -125,14 +132,15 @@ export const paperExecutor: PaperExecutor = {
     };
   },
 
-  sell(entryPriceUsd, currentPriceUsd, tokens, liquidityUsd, exitReason) {
+  sell(entryPriceUsd, currentPriceUsd, tokens, liquidityUsd, exitReason, source) {
     const sizeUsd = tokens * currentPriceUsd;
     const baseSlip = estimateSlippagePct(sizeUsd, Math.max(1000, liquidityUsd)) / 100;
     // Rugs cost more to exit (thin liquidity in panic)
     const rugPenalty = exitReason === "rug-pull" ? rand(0.05, 0.20) : 0;
     const totalSlip = baseSlip + rugPenalty;
 
-    const effectivePriceUsd = currentPriceUsd * (1 - totalSlip);
+    const venueFee = source === "pumpfun" ? PUMPFUN_FEE_PCT / 100 : 0;
+    const effectivePriceUsd = currentPriceUsd * (1 - totalSlip) * (1 - venueFee);
     const proceedsUsd = tokens * effectivePriceUsd;
     const networkSol = NETWORK_FEE_LAMPORTS / LAMPORTS_PER_SOL;
     const jitoTipSol = exitReason === "rug-pull"

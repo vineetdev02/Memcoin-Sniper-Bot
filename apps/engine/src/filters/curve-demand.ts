@@ -4,12 +4,11 @@ import { makeResult } from "./types.js";
 import { PUMPFUN_PROGRAM_ID } from "../feeds/program-ids.js";
 
 /**
- * SOL that buyers have put into a pump.fun curve and left there. Below this
- * nobody is holding the coin, and a 1% position is one of its biggest buys:
- * in the first paper session 46 of 86 entries were under it and they lost
+ * The line is `minCurveSol` (FILTER_MIN_CURVE_SOL, 1 by default): below it
+ * nobody is holding the coin, and a 1% position is one of its biggest buys.
+ * In the first paper session 46 of 86 entries were under 1 SOL and they lost
  * $148 between them, almost all of it the cost of getting in and out.
  */
-const MIN_SOL_IN = 1;
 const LAMPORTS_PER_SOL = 1_000_000_000;
 // BondingCurve: 8-byte discriminator, five u64 reserves (real SOL is the fourth), then `complete: bool`
 const REAL_SOL_OFFSET = 32;
@@ -26,13 +25,11 @@ export const curveDemandFilter: Filter = {
       reason: string,
       metadata?: Record<string, unknown>,
     ) => makeResult("curve-demand", status, reason, { metadata, durationMs: Date.now() - start });
+    const min = ctx.cfg.minCurveSol;
     const verdict = (solIn: number) =>
-      solIn >= MIN_SOL_IN
-        ? done("pass", `${solIn.toFixed(2)} SOL held in the curve`, { solIn, min: MIN_SOL_IN })
-        : done("fail", `only ${solIn.toFixed(2)} SOL held in the curve (min ${MIN_SOL_IN}) — nobody is holding it`, {
-            solIn,
-            min: MIN_SOL_IN,
-          });
+      solIn >= min
+        ? done("pass", `${solIn.toFixed(2)} SOL held in the curve`, { solIn, min })
+        : done("fail", `only ${solIn.toFixed(2)} SOL held in the curve (min ${min})`, { solIn, min });
 
     if (ctx.isSynthetic && ctx.syntheticMock) {
       const solIn = ctx.syntheticMock.curveSolIn;

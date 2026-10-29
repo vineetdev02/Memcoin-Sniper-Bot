@@ -72,6 +72,10 @@ const envSchema = z.object({
   TIME_EXIT_MIN: z.coerce.number().positive(),
   // paper only: sell what is still open when the engine stops, instead of holding it until the next run
   SELL_ON_SHUTDOWN: boolFromString.default(true),
+  // follow every pump.fun launch's curve for 22 min from detection and log it to data/shadow/ (~1 RPC request a second)
+  SHADOW_TRACKING: boolFromString.default(true),
+  // Bot ON detects, judges and shadow-tracks launches but never buys: data without trades
+  WATCH_ONLY: boolFromString.default(false),
   RUG_DETECTION_LP_DROP_PCT: z.coerce.number().positive().max(100),
 
   // Risk
@@ -92,6 +96,10 @@ const envSchema = z.object({
   FILTER_MAX_SELL_TAX_PCT: z.coerce.number().min(0).max(100),
   FILTER_BUNDLED_LAUNCH_REJECT: boolFromString,
   FILTER_MIN_FILTER_SCORE: z.coerce.number().min(0).max(100),
+  // SOL a pump.fun curve must hold when it is judged; below it nobody is holding the coin
+  FILTER_MIN_CURVE_SOL: z.coerce.number().min(0).default(1),
+  // a creator with this many launches in 24 h is a launch farm; 0 turns the check off
+  FILTER_DEV_MAX_LAUNCHES_24H: z.coerce.number().int().min(0).default(3),
 
   // Execution
   JITO_TIP_LAMPORTS: z.coerce.number().int().nonnegative(),

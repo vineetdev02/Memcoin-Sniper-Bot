@@ -19,6 +19,7 @@ function curveAccount(solIn: number, complete = false): { data: Buffer } {
 const ctx = (account: { data: Buffer } | null | Error) =>
   ({
     isSynthetic: false,
+    cfg: { minCurveSol: 1 },
     conn: {
       getAccountInfo: async () => {
         if (account instanceof Error) throw account;
@@ -41,9 +42,11 @@ describe("curve-demand", () => {
     assert.equal(r.metadata?.solIn, 8.18);
   });
 
-  test("the line is 1 SOL", async () => {
+  test("the line is the config's minCurveSol, 1 SOL by default", async () => {
     assert.equal((await curveDemandFilter.evaluate(pool(), ctx(curveAccount(0.99)))).status, "fail");
     assert.equal((await curveDemandFilter.evaluate(pool(), ctx(curveAccount(1)))).status, "pass");
+    const strict = { ...ctx(curveAccount(12)), cfg: { minCurveSol: 15 } } as unknown as FilterContext;
+    assert.equal((await curveDemandFilter.evaluate(pool(), strict)).status, "fail");
   });
 
   test("what cannot be read is skipped, never failed", async () => {
@@ -55,7 +58,7 @@ describe("curve-demand", () => {
 
   test("synthetic pools use their generated figure, and older ones without it skip", async () => {
     const synthetic = (mock: Partial<SyntheticMock>) =>
-      ({ isSynthetic: true, syntheticMock: mock as SyntheticMock }) as FilterContext;
+      ({ isSynthetic: true, syntheticMock: mock as SyntheticMock, cfg: { minCurveSol: 1 } }) as unknown as FilterContext;
     assert.equal((await curveDemandFilter.evaluate(pool(), synthetic({ curveSolIn: 0.4 }))).status, "fail");
     assert.equal((await curveDemandFilter.evaluate(pool(), synthetic({ curveSolIn: 5 }))).status, "pass");
     assert.equal((await curveDemandFilter.evaluate(pool(), synthetic({}))).status, "skip");

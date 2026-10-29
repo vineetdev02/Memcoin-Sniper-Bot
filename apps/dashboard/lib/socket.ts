@@ -15,6 +15,8 @@ import type {
   PositionUpdateEvent,
   ResetResult,
   SettingsSnapshot,
+  ShadowReport,
+  StrategyCheck,
   StatsWindowKey,
   TradeStatsWindow,
 } from "@sniperbot/shared";
@@ -35,6 +37,8 @@ export interface SystemStatus {
   activePreset: string | null;
   botOn: boolean;
   feedLive: boolean;
+  // WATCH_ONLY: on means detecting, judging and shadow-tracking, never buying
+  watchOnly: boolean;
   rpcRequests: number;
   logNotifications: number;
 }
@@ -63,6 +67,8 @@ export interface ClientToServerEvents {
   ) => void;
   "bankroll:get": (ack: (snap: BankrollSnapshot) => void) => void;
   "analytics:get": (ack: (snap: AnalyticsSnapshot) => void) => void;
+  "shadow:report": (ack: (result: { ok: boolean; report?: ShadowReport; error?: string }) => void) => void;
+  "strategy:check": (ack: (result: { ok: boolean; check?: StrategyCheck; error?: string }) => void) => void;
   "stats:get": (
     windowKey: StatsWindowKey,
     ack: (result: { ok: boolean; stats?: TradeStatsWindow; error?: string }) => void,

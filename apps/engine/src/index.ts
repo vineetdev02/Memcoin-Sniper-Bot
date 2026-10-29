@@ -24,6 +24,9 @@ import { bootstrapPresets } from "./state/filter-presets.js";
 import { loadSettings, startingBalanceUsd, tradingSettings } from "./config/trading-settings.js";
 import { PaperAccount } from "./state/paper-reset.js";
 import { createAlerter } from "./alerts/index.js";
+import { SHADOW_DIR, ShadowTracker } from "./analytics/shadow-tracker.js";
+import { LaunchTape } from "./analytics/launch-tape.js";
+import { getRpcConnection } from "./state/rpc.js";
 
 async function main() {
   logger.info(
@@ -105,6 +108,11 @@ async function main() {
   const exitEngine = new ExitEngine(positionStore, env.SYNTHETIC_FEED ? 30 : 1, market);
   const rugWatcher = new RugWatcher(positionStore, exitEngine, market);
   const alerter = createAlerter({ store: positionStore, circuit, pnl });
+  const shadow = env.SHADOW_TRACKING && !env.SYNTHETIC_FEED ? new ShadowTracker(getRpcConnection(), SHADOW_DIR) : null;
+  // the trade tape needs PumpPortal's token-trade feed; the Helius log stream has no such thing
+  const tape =
+    shadow && stream instanceof PumpPortalStream ? new LaunchTape(stream, (mint, t) => shadow.tape(mint, t)) : null;
+  if (tape && stream instanceof PumpPortalStream) stream.on("trade", (t) => tape.record(t));
 
   // What the last run left open carries on; what it closed stays in the totals.
   try {
@@ -118,6 +126,8 @@ async function main() {
   // could only answer "unknown" and no strict preset could ever pass.
   // Synthetic pools carry their answers and are judged at once.
   detector.on("pool", (event) => {
+    shadow?.follow(event);
+    tape?.start(event);
     const judge = () => {
       trader.cachePool(event);
       void orchestrator.evaluate(event);
@@ -129,6 +139,7 @@ async function main() {
 
   orchestrator.on("verdict", (v) => {
     void publishVerdict(v);
+    shadow?.judged(v);
     if (v.decision === "snipe") {
       const pool = trader.resolvePool(v);
       if (pool) void trader.handleVerdict(v, pool);
@@ -157,6 +168,8 @@ async function main() {
   market.start();
   exitEngine.start();
   rugWatcher.start();
+  await shadow?.resume();
+  shadow?.start();
   pnl.start(60_000);
 
   // Nothing subscribes to the RPC provider until the dashboard turns this on.
@@ -175,8 +188,10 @@ async function main() {
     },
     detector,
     orchestrator,
-    trader,
+    // watch-only: launches are detected, judged and shadow-tracked, never bought
+    trader: { setEnabled: (on: boolean) => trader.setEnabled(on && !env.WATCH_ONLY) },
   });
+  if (env.WATCH_ONLY) logger.warn("WATCH_ONLY: the bot watches and records launches but opens no positions");
 
   const account = new PaperAccount({
     bot,
@@ -243,6 +258,8 @@ async function main() {
         skippedHalted: ts.skippedHalted,
         bot: bot.isOn() ? "on" : "off",
         rpcRequests: rpcUsage().rpcRequests,
+        shadow: shadow ? `${shadow.getStats().following} following, ${shadow.getStats().written} written` : undefined,
+        tape: tape ? `${tape.getStats().recording} launches, ${tape.getStats().tradesSeen} trades` : undefined,
         alerts: as ? (as.disabled ? "disabled" : `${as.sent} sent, ${as.failed} failed, ${as.dropped} dropped`) : undefined,
       },
       "stats",
@@ -268,6 +285,8 @@ async function main() {
       if (isPaperMode && env.SELL_ON_SHUTDOWN) exitEngine.sellAllOnShutdown();
       await positionStore.flush();
       await alerter?.stop(signal);
+      tape?.stop();
+      await shadow?.stop();
       synthetic?.stop();
       rugWatcher.stop();
       market.stop();

@@ -60,6 +60,85 @@ export interface BankrollPoint {
   openExposureUsd: number;
 }
 
+/** One filter's record on every shadow-tracked launch, bought or not. */
+export interface ShadowFilterRow {
+  filterId: FilterId;
+  failed: number;
+  failedPumped: number;
+  passed: number;
+  passedPumped: number;
+}
+
+/** What happened to every launch after its verdict, from the shadow tracker's files. */
+export interface ShadowReport {
+  launches: number;
+  pumped: number;
+  pumpThresholdPct: number;
+  horizonMin: number;
+  snipes: number;
+  snipesPumped: number;
+  fromTs: number;
+  toTs: number;
+  filters: ShadowFilterRow[];
+}
+
+/**
+ * "holds": the 95% range is above break-even and both halves made money.
+ * "loses": the whole range is below break-even. "unclear": the range takes in
+ * break-even, so the trades cannot tell the rule from luck. "thin": too few
+ * trades to say anything.
+ */
+export type StrategyVerdict = "holds" | "unclear" | "loses" | "thin";
+
+/** The trades one entry rule would have made on the shadow-tracked launches, with the current exits. */
+export interface StrategyCheckRow {
+  entrySec: number;
+  minCurveSol: number;
+  trades: number;
+  totalUsd: number;
+  perTradeUsd: number;
+  // a 95% range for the per-trade figure, from its standard error; null under two trades
+  perTradeLowUsd: number | null;
+  perTradeHighUsd: number | null;
+  winRate: number;
+  bestUsd: number;
+  worstUsd: number;
+  // per trade in the earlier and the later half of the launches, by detection time
+  firstHalfPerTradeUsd: number | null;
+  secondHalfPerTradeUsd: number | null;
+  verdict: StrategyVerdict;
+}
+
+/** The current settings replayed on every pump.fun launch the shadow tracker followed. */
+export interface StrategyCheck {
+  launches: number;
+  fromTs: number;
+  toTs: number;
+  stakeUsd: number;
+  solUsd: number;
+  // true when Jupiter had no SOL price and a fixed estimate sized the trades
+  solUsdEstimated: boolean;
+  // the current settings: wait before judging, plus the Demand line when that filter is on
+  yours: StrategyCheckRow;
+  // the same exits buying every launch at the same moment, Demand line or not
+  everyLaunch: StrategyCheckRow;
+  // the same Demand line and exits at other entry delays, the current one among them
+  byDelay: StrategyCheckRow[];
+  // enabled filters that judge things the shadow files cannot replay
+  notReplayed: string[];
+}
+
+/** One closed trade, for the per-trade charts on the Stats page. */
+export interface TradePoint {
+  closedAt: number;
+  tokenMint: string;
+  pnlUsd: number;
+  pnlPct: number;
+  peakGainPct: number;
+  holdSec: number;
+  reason: string;
+}
+
 export interface TradeStatsWindow {
   windowKey: StatsWindowKey;
   windowMs: number;
@@ -81,6 +160,8 @@ export interface TradeStatsWindow {
   avgWinPct: number;
   avgLossPct: number;
   roiPct: number;
+  // the paper account's basis, set at the last reset
+  startingBalanceUsd: number;
   // Breakdowns
   byDex: BucketPerformance[];
   byCloseReason: BucketPerformance[];
@@ -89,6 +170,8 @@ export interface TradeStatsWindow {
   topLoser: TradeHighlight | null;
   // Series
   bankrollSeries: BankrollPoint[];
+  // closed in the window, oldest first, the most recent MAX_TRADE_POINTS
+  trades: TradePoint[];
   takenAt: number;
 }
 

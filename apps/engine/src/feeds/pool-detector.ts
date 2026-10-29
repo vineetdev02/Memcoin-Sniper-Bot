@@ -31,7 +31,7 @@ export declare interface PoolDetector {
   ): boolean;
 }
 
-const dexSourceToPrisma: Record<DexSource, string> = {
+export const dexSourceToPrisma: Record<DexSource, string> = {
   pumpfun: "pumpfun",
   pumpswap: "pumpswap",
   "raydium-amm": "raydium_amm",

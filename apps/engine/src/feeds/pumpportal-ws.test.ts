@@ -44,6 +44,25 @@ describe("readPumpPortalMessage", () => {
     assert.equal(item.event.detectedAt, NOW);
   });
 
+  test("a launch keeps its name, symbol and the creator's own buy", () => {
+    const item = readPumpPortalMessage(create({ solAmount: 2.5 }), NOW, ALL);
+    if (item?.kind !== "pool") return assert.fail("not a pool");
+    assert.deepEqual(item.event.rawEvent, { name: "Example", symbol: "EX", devBuySol: 2.5 });
+  });
+
+  test("a curve buy or sell from a token-trade subscription becomes a trade", () => {
+    const trade = (o: Record<string, unknown>) =>
+      JSON.stringify({ signature: SIG, mint: MINT, traderPublicKey: DEV, txType: "buy", solAmount: 0.75, pool: "pump", ...o });
+    assert.deepEqual(readPumpPortalMessage(trade({}), NOW, ALL), {
+      kind: "trade",
+      trade: { mint: MINT, trader: DEV, side: "buy", sol: 0.75, receivedAt: NOW },
+    });
+    assert.equal(readPumpPortalMessage(trade({ txType: "sell" }), NOW, ALL)?.kind, "trade");
+    // a PumpSwap trade, or one without an amount, is not a curve trade
+    assert.equal(readPumpPortalMessage(trade({ pool: "pump-amm" }), NOW, ALL), null);
+    assert.equal(readPumpPortalMessage(trade({ solAmount: "x" }), NOW, ALL), null);
+  });
+
   test("a PumpSwap migration is handed on to be parsed from its transaction", () => {
     assert.deepEqual(readPumpPortalMessage(migrate("pump-amm"), NOW, ALL), {
       kind: "migration",

@@ -65,6 +65,10 @@ tmp/
 temp/
 # what a safe reset from the dashboard saved before deleting
 backups/
+# shadow-tracked launch paths
+**/data/shadow/
+# early buyers fetched for launches tracked before the Smart Money filter
+**/data/early-buyers.ndjson
 .DS_Store
 Thumbs.db
 
@@ -97,3 +101,4 @@ redis-data/
 *.bak
 *.backup
 *.orig
+.gstack/
